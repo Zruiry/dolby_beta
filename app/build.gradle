@@ -8,6 +8,7 @@
  * - 升级compileSdk和buildToolsVersion
  */
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 Properties props = new Properties()
 props.load(new FileInputStream(file("signing.properties")))
@@ -15,17 +16,18 @@ props.load(new FileInputStream(file("signing.properties")))
 android {
     // AGP 8.x要求必须声明namespace，替代AndroidManifest.xml中的package属性
     namespace 'com.raincat.dolby_beta'
-    // 升级compileSdk到34，AGP 8.x要求更高版本
-    compileSdk 34
+    // compileSdk 36（libxposed API 101的service依赖要求compileSdk 36+）
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.raincat.dolby_beta"
         // AGP 8.x新语法：minSdk替代minSdkVersion
-        minSdk 21
+        // 升级到26，libxposed service依赖要求minSdk 26+
+        minSdk 26
         // AGP 8.x新语法：targetSdk替代targetSdkVersion
         targetSdk 34
         versionCode 354
-        versionName "3.5.4.zr1"
+        versionName "3.5.4.zr2"
 
         ndk {
             abiFilters "arm64-v8a"
@@ -40,9 +42,11 @@ android {
     // AGP 8.x中extractNativeLibs应从AndroidManifest移到此处
     packagingOptions {
         jniLibs {
-            useLegacyPackaging = true
+            useLegacyPackaging true
         }
     }
+
+    // libxposed API 101需要META-INF/xposed/配置文件的合并规则
 
     signingConfigs {
         release{
@@ -54,10 +58,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField "boolean", "LOG_DEBUG", "true" //显示log
+        }
         release {
             buildConfigField "boolean", "LOG_DEBUG", "false" //不显示log
             shrinkResources false //资源压缩
-            minifyEnabled false //混淆
+            // 必须启用R8代码压缩，否则libxposed API类会被打包进DEX
+            // LSPosed检测到API类来自模块ClassLoader时会拒绝加载模块
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
@@ -80,6 +89,10 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
     // AGP 8.x中lintOptions已废弃，使用lint替代
     lint {
         abortOnError false
@@ -90,13 +103,21 @@ dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar"])
     implementation 'androidx.appcompat:appcompat:1.2.0'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.0.0'
-    //xposed库
-    compileOnly 'de.robv.android.xposed:api:82'
-    compileOnly 'de.robv.android.xposed:api:82:sources'
+    // Modern libxposed API 102（替代Legacy API de.robv.android.xposed:api:82）
+    // 必须使用compileOnly，否则API类会被打包进APK导致LSPosed拒绝加载
+    compileOnly 'io.github.libxposed:api:102.0.0'
     implementation 'com.annimon:stream:1.2.2'
     implementation 'org.smali:dexlib2:2.3.4'
     implementation 'com.google.guava:guava:28.2-android'
     implementation 'com.google.code.gson:gson:2.8.9'
-
-    implementation project(':hotxposed')
+    // Kotlin标准库
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 }
+
+// ============================================================================
+// 日志说明
+// ============================================================================
+// Debug 版本在设备端自动将日志写入文件（LogUtils.init()），路径为：
+//   /sdcard/Android/data/{网易云包名}/files/dolby/dolby.log
+// 分析日志时通过 adb pull 命令拉取到项目 logs/dolby.log：
+//   adb pull /sdcard/Android/data/com.netease.cloudmusic/files/dolby/dolby.log logs/dolby.log

@@ -1,2 +1,0 @@
-<!-- AGP 8.x中package属性已移至build.gradle的namespace，此处不再声明 -->
-<manifest />

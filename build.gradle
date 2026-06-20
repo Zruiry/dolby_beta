@@ -4,6 +4,8 @@
  * 仓库配置：移除已废弃的jcenter，使用mavenCentral和google
  */
 buildscript {
+    // Kotlin版本（与AGP 8.10.0兼容）
+    ext.kotlin_version = '1.9.25'
     repositories {
         // 优先使用阿里云镜像，加速依赖下载
         maven { url "https://maven.aliyun.com/repository/central" }
@@ -15,6 +17,8 @@ buildscript {
     dependencies {
         // AGP升级到8.10.0，兼容Gradle 8.11.1和Java 21
         classpath "com.android.tools.build:gradle:8.10.0"
+        // Kotlin插件
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 

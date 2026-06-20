@@ -1,36 +1,60 @@
-# Add project specific ProGuard rules here.
-# By default, the flags in this file are appended to flags specified
-# in C:\Users\Bin\AppData\Local\Android\sdk/tools/proguard/proguard-android.txt
-# You can edit the include path and order by changing the proguardFiles
-# directive in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ============================================================
+# Modern libxposed API 102 保留规则
+# ============================================================
 
-# Add any project specific keep options here:
+# 保留模块入口类MainHook
+# LSPosed通过META-INF/xposed/java_init.list找到入口类，
+# 通过反射实例化（继承XposedModule，LSPosed自动处理构造函数和attachFramework）
+-keep class com.raincat.dolby_beta.MainHook {
+    public <init>(...);
+}
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# 保留XposedModule基类的所有方法（LSPosed通过反射调用生命周期回调）
+-keep class io.github.libxposed.api.XposedModule {
+    public *;
+}
 
--keep class net.androidwing.hotxposed.* {*;}
--keep class com.raincat.dolby_beta.MainHook
+# 保留XposedInterfaceWrapper（attachFramework方法必须保留）
+-keep class io.github.libxposed.api.XposedInterfaceWrapper {
+    public *;
+}
+
+# 保留XposedInterface相关接口（Hooker、Chain、HookHandle等用于运行时hook注册）
+-keep interface io.github.libxposed.api.XposedInterface$Hooker {
+    *;
+}
+-keep interface io.github.libxposed.api.XposedInterface$Chain {
+    *;
+}
+-keep interface io.github.libxposed.api.XposedInterface$HookHandle {
+    *;
+}
+
+# 保留XposedModuleInterface（生命周期回调接口）
+-keep interface io.github.libxposed.api.XposedModuleInterface {
+    *;
+}
+-keep interface io.github.libxposed.api.XposedModuleInterface$ModuleLoadedParam {
+    *;
+}
+-keep interface io.github.libxposed.api.XposedModuleInterface$PackageReadyParam {
+    *;
+}
+-keep interface io.github.libxposed.api.XposedModuleInterface$PackageLoadedParam {
+    *;
+}
+
+# 保留ScriptHelper（包含静态字段modulePath被MainHook引用）
 -keep class com.raincat.dolby_beta.helper.ScriptHelper
 
 # 跳过所有Json实体类
 -keep public class **.*model*.** {*;}
 
--keep class com.raincat.dolby_beta.HookerDispatcher* {
-  void dispatch(*);
-}
-
 -keep public class android.app.**
 -keep class com.gyf.barlibrary.* {*;}
 -dontwarn com.gyf.barlibrary.**
 
+-dontwarn org.jetbrains.annotations.**
 -dontwarn sun.misc.Unsafe
 -dontwarn com.google.common.collect.MinMaxPriorityQueue
 -dontwarn com.google.common.util.concurrent.FuturesGetChecked**
@@ -46,13 +70,13 @@
 -classobfuscationdictionary proguard-class.txt
 # 指定class
 -packageobfuscationdictionary proguard-class.txt
-# 将包里的类混淆成n个再重新打包到一个统一的package中  会覆盖flattenpackagehierarchy选项
--repackageclasses com.raincat.dolby_beta
-# 删除日志
--assumenosideeffects class android.util.Log {
-    public static boolean isLoggable(java.lang.String, int);
-    public static int d(...);
-    public static int w(...);
-    public static int v(...);
-    public static int i(...);
-}
+# 禁用repackageclasses：Xposed模块大量使用反射加载目标应用的类，
+# repackageclasses会把模块类移到统一包下，可能导致类加载问题
+# -repackageclasses com.raincat.dolby_beta
+# 保留所有日志输出（debug/verbose/info/warn/error），便于问题排查
+# 如需发布正式版可恢复以下配置以移除debug和verbose日志：
+# -assumenosideeffects class android.util.Log {
+#     public static boolean isLoggable(java.lang.String, int);
+#     public static int d(...);
+#     public static int v(...);
+# }
