@@ -1,135 +1,115 @@
-package com.raincat.dolby_beta.view;
-
-import android.content.Context;
-import android.content.Intent;
-import android.graphics.Color;
-import android.util.AttributeSet;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.CheckBox;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-
-import com.raincat.dolby_beta.helper.SettingHelper;
-import com.raincat.dolby_beta.utils.Tools;
-
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2021/04/11
- *     desc   : 控件
- *     version: 1.0
- * </pre>
+ * 基础对话框控件 - 带CheckBox的设置项
+ *
  */
+package com.raincat.dolby_beta.view
 
-public class BaseDialogItem extends LinearLayout {
-    private BaseDialogItem item;
-    private Context context;
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.util.AttributeSet
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.utils.Tools
 
-    protected CheckBox checkBox;
-    protected TextView titleView, subView;
+open class BaseDialogItem @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0
+) : LinearLayout(context, attrs, defStyle) {
 
-    protected String title, sub, key;
+    private var item: BaseDialogItem? = null
+    protected var contextInner: Context = context
 
-    public BaseDialogItem(Context context, AttributeSet attrs, int defStyle) {
-        this(context, attrs);
+    protected var checkBox: CheckBox
+    protected var titleView: TextView
+    protected var subView: TextView
+
+    protected var title: String? = null
+    protected var sub: String? = null
+    protected var key: String = ""
+
+    init {
+        val padding = Tools.dp2px(context, 10f)
+        setPadding(padding, 10, padding, 10)
+        minimumHeight = Tools.dp2px(context, 40f)
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+
+        val linearLayout = LinearLayout(context)
+        linearLayout.orientation = LinearLayout.VERTICAL
+        addView(linearLayout)
+        val layoutParams = LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        linearLayout.layoutParams = layoutParams
+
+        titleView = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.0f)
+            setTextColor(Color.BLACK)
+            visibility = GONE
+        }
+        subView = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.0f)
+            setTextColor(Color.DKGRAY)
+            visibility = GONE
+        }
+        linearLayout.addView(titleView)
+        linearLayout.addView(subView)
+
+        checkBox = CheckBox(context).apply {
+            isClickable = false
+            visibility = GONE
+        }
+        addView(checkBox)
     }
 
-    public BaseDialogItem(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        init(context, attrs);
-    }
-
-    public BaseDialogItem(Context context) {
-        super(context);
-        init(context, null);
-    }
-
-    protected void init(Context context, AttributeSet attrs) {
-        this.context = context;
-
-        int padding = Tools.dp2px(context, 10);
-        setPadding(padding, 10, padding, 10);
-        setMinimumHeight(Tools.dp2px(context, 40));
-        setOrientation(LinearLayout.HORIZONTAL);
-        setGravity(Gravity.CENTER_VERTICAL);
-
-        LinearLayout linearLayout = new LinearLayout(context);
-        linearLayout.setOrientation(LinearLayout.VERTICAL);
-        addView(linearLayout);
-        LayoutParams layoutParams = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        linearLayout.setLayoutParams(layoutParams);
-
-        titleView = new TextView(context);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        titleView.setTextColor(Color.BLACK);
-        subView = new TextView(context);
-        subView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
-        subView.setTextColor(Color.DKGRAY);
-        linearLayout.addView(titleView);
-        linearLayout.addView(subView);
-        checkBox = new CheckBox(context);
-        checkBox.setClickable(false);
-        addView(checkBox);
-
-        titleView.setVisibility(GONE);
-        subView.setVisibility(GONE);
-        checkBox.setVisibility(GONE);
-    }
-
-    @Override
-    public void setEnabled(boolean enabled) {
-        super.setEnabled(enabled);
-
+    override fun setEnabled(enabled: Boolean) {
+        super.setEnabled(enabled)
         if (!enabled) {
-            titleView.setTextColor(Color.LTGRAY);
-            subView.setTextColor(Color.LTGRAY);
+            titleView.setTextColor(Color.LTGRAY)
+            subView.setTextColor(Color.LTGRAY)
         } else {
-            titleView.setTextColor(Color.BLACK);
-            subView.setTextColor(Color.DKGRAY);
+            titleView.setTextColor(Color.BLACK)
+            subView.setTextColor(Color.DKGRAY)
         }
-        checkBox.setEnabled(enabled);
+        checkBox.isEnabled = enabled
     }
 
-    protected void setData(boolean showCheck, boolean check) {
-        if (title != null && title.length() != 0) {
-            titleView.setText(title);
-            titleView.setVisibility(VISIBLE);
+    protected fun setData(showCheck: Boolean, check: Boolean) {
+        if (!title.isNullOrEmpty()) {
+            titleView.text = title
+            titleView.visibility = VISIBLE
         }
-        if (sub != null && sub.length() != 0) {
-            subView.setText(sub);
-            subView.setVisibility(VISIBLE);
+        if (!sub.isNullOrEmpty()) {
+            subView.text = sub
+            subView.visibility = VISIBLE
         }
         if (showCheck) {
-            checkBox.setChecked(check);
-            checkBox.setVisibility(VISIBLE);
+            checkBox.isChecked = check
+            checkBox.visibility = VISIBLE
         }
     }
 
-    /**
-     * 依附于某个item，当该item未勾选时，本item为不可选状态
-     */
-    public void setBaseOnView(BaseDialogItem item) {
-        this.item = item;
-        refresh();
+    /** 依附于某个item，当该item未勾选时，本item为不可选状态 */
+    fun setBaseOnView(item: BaseDialogItem) {
+        this.item = item
+        refresh()
     }
 
-    protected boolean getCheckBoxStatus() {
-        return checkBox.isChecked();
+    /** CheckBox是否勾选 - internal供子视图访问 */
+    internal fun getCheckBoxStatus(): Boolean = checkBox.isChecked
+
+    open fun refresh() {
+        item?.let { setEnabled(it.getCheckBoxStatus()) }
+        if (checkBox.visibility == VISIBLE)
+            checkBox.isChecked = SettingHelper.getInstance().getSetting(key)
     }
 
-    public void refresh() {
-        if (item != null) {
-            setEnabled(item.getCheckBoxStatus());
-        }
-        if (checkBox.getVisibility() == VISIBLE)
-            checkBox.setChecked(SettingHelper.getInstance().getSetting(key));
-    }
-
-    protected void sendBroadcast(String action) {
-        context.sendBroadcast(new Intent(action));
+    protected fun sendBroadcast(action: String) {
+        contextInner.sendBroadcast(Intent(action))
     }
 }

@@ -1,176 +1,166 @@
-package com.raincat.dolby_beta.net;
+/**
+ * HTTP请求工具 - 支持GET/POST请求
+ *
+ */
+package com.raincat.dolby_beta.net
 
-import android.net.Uri;
-import android.text.TextUtils;
-import android.util.Pair;
-
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
-import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
+import android.net.Uri
+import android.util.Pair
+import java.io.BufferedReader
+import java.io.DataOutputStream
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.URL
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
 
 /**
- * Http
- * Created by Administrator on 2018/3/29 0029.
+ * HTTP请求封装
+ *
+ * @param method GET/POST
+ * @param url    请求地址
+ * @param header 请求头
+ * @param param  请求参数（字符串形式）
  */
-public class Http {
-    private Request mRequest = new Request();
-    private static ExecutorService exec = Executors.newFixedThreadPool(10);
+class Http(
+    method: String,
+    url: String,
+    header: HashMap<String, Any>?,
+    param: String
+) {
+    private val mRequest = Request()
 
-    /**
-     * @param method GET/POST
-     * @param url    地址
-     * @param param  参数
-     * @param header 请求头
-     */
-    public Http(final String method, final String url, final HashMap<String, Object> header, final String param) {
-        mRequest.header = header;
-        mRequest.method = method;
-        mRequest.param = param;
-        mRequest.url = url;
+    init {
+        mRequest.header = header ?: HashMap()
+        mRequest.method = method
+        mRequest.param = param
+        mRequest.url = url
     }
 
     /**
-     * @param method GET/POST
-     * @param url    地址
-     * @param param  参数
-     * @param header 请求头
-     */
-    public Http(final String method, final String url, final HashMap<String, Object> param, final HashMap<String, Object> header) {
-        StringBuilder stringBuilder = new StringBuilder();
-        if (param != null)
-            for (Map.Entry entry : param.entrySet()) {
-                stringBuilder.append(entry.getKey());
-                stringBuilder.append("=");
-                stringBuilder.append(Uri.encode(entry.getValue().toString()));
-                stringBuilder.append("&");
-            }
-        if (stringBuilder.length() != 0)
-            stringBuilder.deleteCharAt(stringBuilder.length() - 1);
+ * @param method GET/POST
+ * @param url    请求地址
+ * @param param  参数Map
+ * @param header 请求头
+ */
+constructor(
+    method: String,
+    url: String,
+    param: HashMap<String, Any>?,
+    header: HashMap<String, Any>?
+) : this(method, url, header, param?.let { buildParamString(it) } ?: "")
 
-        mRequest.header = header;
-        mRequest.method = method;
-        mRequest.param = stringBuilder.toString();
-        mRequest.url = url;
-    }
+    fun getResult(): String = doHttp(mRequest)
 
-    public String getResult() {
-        return doHttp(mRequest);
-    }
-
-    private String doHttp(final Request request) {
-        FutureTask<Pair<Integer, String>> future = new FutureTask<>(new Callable<Pair<Integer, String>>() {
-            public Pair<Integer, String> call() {
-                return post(request);
-            }
-        });
-        exec.execute(future);
-        try {
-            Pair<Integer, String> pair = future.get();
+    private fun doHttp(request: Request): String {
+        val future = FutureTask<Pair<Int, String>> { post(request) }
+        exec.execute(future)
+        return try {
+            val pair = future.get()
             if (pair.first != 0 && mRequest.reTry > 0) {
-                mRequest.reTry--;
-                doHttp(mRequest);
-            } else
-                return pair.second;
-        } catch (Exception e) {
-            e.printStackTrace();
+                mRequest.reTry--
+                doHttp(mRequest)
+            } else {
+                pair.second ?: ""
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            ""
         }
-        return "";
     }
 
-    private static Pair<Integer, String> post(Request request) {
-        String result;
-        int errorCode = 0;
+    companion object {
+        private val exec: ExecutorService = Executors.newFixedThreadPool(10)
 
-        HttpURLConnection connection = null;
-        InputStream is = null;
-        try {
-            URL url = new URL(request.url);// 获得URL对象
-            connection = (HttpURLConnection) url.openConnection();// 获得HttpURLConnection对象
-            connection.setRequestMethod(request.method);// 请求方式POST
-            connection.setUseCaches(false);// 不使用缓存
-            connection.setConnectTimeout(request.timeout);// 设置超时时间
-            connection.setReadTimeout(request.timeout);// 设置读取超时时间
-            connection.setInstanceFollowRedirects(true);// 自动执行 http 重定向
-            if (request.method.equals("POST")) {
-                connection.setDoInput(true);// 设置是否从httpUrlConnection读入，默认情况下是true;
-                connection.setDoOutput(true);
-                connection.setChunkedStreamingMode(0);//设置超时不自动重试
+        /**
+         * 将参数Map编码为URL查询字符串
+         */
+        private fun buildParamString(param: HashMap<String, Any>): String {
+            val sb = StringBuilder()
+            for ((key, value) in param) {
+                sb.append(key).append("=").append(Uri.encode(value.toString())).append("&")
             }
-            connection.setRequestProperty("Charset", "UTF-8");
-            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            connection.setRequestProperty("Cookie", "os=android");
-
-            if (request.header != null)
-                for (Map.Entry<String, Object> entry : request.header.entrySet()) {
-                    connection.setRequestProperty(entry.getKey(), entry.getValue().toString());
-                }
-            connection.connect();
-
-            if (request.method.equals("POST") && !TextUtils.isEmpty(request.param)) {
-                DataOutputStream out = new DataOutputStream(connection.getOutputStream());
-                out.writeBytes(request.param);
-                out.flush();
-                out.close();
-            }
-
-            // 响应码是否为200
-            if (connection.getResponseCode() == HttpURLConnection.HTTP_OK)
-                is = connection.getInputStream();
-            else {
-                is = connection.getErrorStream();
-                errorCode = connection.getResponseCode();
-            }
-
-            // 获得输入流
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
-            // 包装字节流为字符流
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            result = response.toString();
-        } catch (SocketException e) {
-            errorCode = 2;
-            e.printStackTrace();
-            result = e.getMessage();
-        } catch (OutOfMemoryError e) {
-            errorCode = 3;
-            e.printStackTrace();
-            result = e.getMessage();
-        } catch (SocketTimeoutException e) {
-            errorCode = 4;
-            e.printStackTrace();
-            result = e.getMessage();
-        } catch (Exception e) {
-            e.printStackTrace();
-            errorCode = -1;
-            result = e.getMessage();
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-            if (is != null) {
-                try {
-                    is.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+            if (sb.isNotEmpty()) sb.deleteCharAt(sb.length - 1)
+            return sb.toString()
         }
 
-        return new Pair<>(errorCode, result);
+        private fun post(request: Request): Pair<Int, String> {
+            var result: String
+            var errorCode = 0
+
+            var connection: HttpURLConnection? = null
+            var inputStream: java.io.InputStream? = null
+            try {
+                val url = URL(request.url)
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = request.method
+                connection.useCaches = false
+                connection.connectTimeout = request.timeout
+                connection.readTimeout = request.timeout
+                connection.instanceFollowRedirects = true
+
+                if (request.method == "POST") {
+                    connection.doInput = true
+                    connection.doOutput = true
+                    connection.setChunkedStreamingMode(0)
+                }
+
+                connection.setRequestProperty("Charset", "UTF-8")
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                connection.setRequestProperty("Cookie", "os=android")
+
+                request.header.forEach { (key, value) ->
+                    connection.setRequestProperty(key, value.toString())
+                }
+                connection.connect()
+
+                if (request.method == "POST" && request.param.isNotEmpty()) {
+                    val out = DataOutputStream(connection.outputStream)
+                    out.writeBytes(request.param)
+                    out.flush()
+                    out.close()
+                }
+
+                // 根据响应码获取输入流
+                inputStream = if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    connection.inputStream
+                } else {
+                    errorCode = connection.responseCode
+                    connection.errorStream
+                }
+
+                val reader = BufferedReader(InputStreamReader(inputStream, "UTF-8"))
+                val response = StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    response.append(line)
+                }
+                result = response.toString()
+            } catch (e: SocketException) {
+                errorCode = 2
+                e.printStackTrace()
+                result = e.message ?: ""
+            } catch (e: OutOfMemoryError) {
+                errorCode = 3
+                e.printStackTrace()
+                result = e.message ?: ""
+            } catch (e: SocketTimeoutException) {
+                errorCode = 4
+                e.printStackTrace()
+                result = e.message ?: ""
+            } catch (e: Exception) {
+                e.printStackTrace()
+                errorCode = -1
+                result = e.message ?: ""
+            } finally {
+                connection?.disconnect()
+                try { inputStream?.close() } catch (e: Exception) { e.printStackTrace() }
+            }
+
+            return Pair(errorCode, result)
+        }
     }
 }

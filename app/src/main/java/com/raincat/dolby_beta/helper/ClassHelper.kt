@@ -1,504 +1,863 @@
-package com.raincat.dolby_beta.helper;
-
-import android.content.Context;
-import android.content.SharedPreferences;
-import android.net.Uri;
-import android.util.Log;
-
-import com.annimon.stream.Stream;
-
-import org.jf.dexlib2.DexFileFactory;
-import org.jf.dexlib2.dexbacked.DexBackedClassDef;
-import org.jf.dexlib2.dexbacked.DexBackedDexFile;
-import org.jf.dexlib2.iface.MultiDexContainer;
-
-import java.io.Closeable;
-import java.io.File;
-import java.io.Serializable;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-
-import de.robv.android.xposed.XposedHelpers;
-
-import static de.robv.android.xposed.XposedHelpers.findClassIfExists;
-import static de.robv.android.xposed.XposedHelpers.findMethodsByExactParameters;
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2021/04/14
- *     desc   : 类加载帮助 - 仅保留音源代理所需的内部类
- *              保留：Cookie, OKHttp3Response, OKHttp3Header, HttpResponse, HttpUrl, HttpParams, HttpInterceptor
- *              删除：DownloadTransfer, MainActivitySuperClass, BottomTabView, SidebarItem, CommentDataClass, Ad
- *     version: 2.0
- * </pre>
+ * 类加载帮助 - 仅保留音源代理所需的内部类
+ * 保留：Cookie, OKHttp3Response, OKHttp3Header, HttpResponse, HttpUrl, HttpParams, HttpInterceptor
+ *
+ * 从Legacy API迁移到Modern libxposed API
+ * 旧版：XposedHelpers.findClassIfExists/findMethodsByExactParameters/callMethod/callStaticMethod
+ * 新版：Java反射 ClassLoader.loadClass/Method.invoke/Field.get
+ *
  */
+package com.raincat.dolby_beta.helper
 
-public class ClassHelper {
-    private static final String TAG = "dolby_beta";
-    // 类加载器
-    private static ClassLoader classLoader = null;
-    // dex缓存
-    private static List<String> classCacheList = null;
-    // dex缓存路径
-    private static String classCachePath = null;
-    // 网易云版本
-    private static int versionCode = 0;
+import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import com.annimon.stream.Stream
+import com.raincat.dolby_beta.utils.LogUtils
+import org.jf.dexlib2.DexFileFactory
+import org.jf.dexlib2.dexbacked.DexBackedDexFile
+import org.jf.dexlib2.iface.MultiDexContainer
+import org.json.JSONObject
+import java.io.Closeable
+import java.io.File
+import java.io.Serializable
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
+import java.util.Collections
+import java.util.NoSuchElementException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.regex.Pattern
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
-    public static synchronized void getCacheClassList(final Context context, final int version, final OnCacheClassListener listener) {
+object ClassHelper {
+
+    /** 混淆包名匹配正则：根包名为1-3个小写字母+数字（如 dl0、ek1、ab 等），不同版本会变化 */
+    private val obfuscatePackagePattern = Pattern.compile("^[a-z][a-z0-9]{0,2}$")
+    /** DEX 缓存 schema 版本号：扫描逻辑变更时递增，使旧缓存自动失效 */
+    private const val CACHE_SCHEMA_VERSION = 2
+
+    /** 类加载器 */
+    private var classLoader: ClassLoader? = null
+    /** dex缓存 */
+    private var classCacheList: MutableList<String>? = null
+    /** dex缓存路径 */
+    private var classCachePath: String? = null
+    /** 网易云版本 */
+    private var versionCode = 0
+
+    @JvmStatic
+    @Synchronized
+    fun getCacheClassList(context: Context, version: Int, listener: OnCacheClassListener) {
         if (classLoader == null) {
-            classLoader = context.getClassLoader();
-            versionCode = version;
-            File cacheFile = Objects.requireNonNull(context.getExternalFilesDir(null));
+            classLoader = context.classLoader
+            versionCode = version
+            val cacheFile = context.getExternalFilesDir(null)!!
             if (cacheFile.exists() || cacheFile.mkdirs())
-                classCachePath = cacheFile.getPath();
+                classCachePath = cacheFile.path
         }
         if (classCacheList == null) {
-            if (SettingHelper.getInstance().isEnable(SettingHelper.dex_key))
-                classCacheList = FileHelper.readFileFromSD(classCachePath + File.separator + "class-" + version);
+            classCacheList = if (SettingHelper.getInstance().isEnable(SettingHelper.dex_key))
+                FileHelper.readFileFromSD(classCachePath + File.separator + "class-$version-v$CACHE_SCHEMA_VERSION").toMutableList()
             else
-                classCacheList = new ArrayList<>();
-            if (classCacheList.size() == 0) {
-                new Thread(() -> getCacheClassByZip(context, version, listener)).start();
-            } else
-                listener.onGet();
-        } else
-            listener.onGet();
+                mutableListOf()
+            if (classCacheList!!.isEmpty()) {
+                Thread { getCacheClassByZip(context, version, listener) }.start()
+            } else {
+                listener.onGet()
+            }
+        } else {
+            listener.onGet()
+        }
     }
 
-    private static synchronized void getCacheClassByZip(Context context, int version, OnCacheClassListener listener) {
+    private fun getCacheClassByZip(context: Context, version: Int, listener: OnCacheClassListener) {
         try {
-            File appInstallFile = new File(context.getPackageResourcePath());
-            Enumeration<? extends ZipEntry> zip = new ZipFile(appInstallFile).entries();
+            // 优先使用 applicationInfo.sourceDir（原始 APK 路径）
+            // 避免 Tinker 热修复场景下 packageResourcePath 返回补丁包路径（不含完整 DEX）
+            val appInstallFile = File(context.applicationInfo.sourceDir)
+            LogUtils.i("ClassHelper: 开始DEX扫描 - APK路径=${appInstallFile.path}")
+            val zip = ZipFile(appInstallFile).entries()
+            var dexCount = 0
+            var classCount = 0
             while (zip.hasMoreElements()) {
-                ZipEntry dexInZip = zip.nextElement();
-                if (dexInZip.getName().startsWith("classes") && dexInZip.getName().endsWith(".dex")) {
-                    MultiDexContainer.DexEntry<? extends DexBackedDexFile> dexEntry = DexFileFactory.loadDexEntry(appInstallFile, dexInZip.getName(), true, null);
-                    DexBackedDexFile dexFile = dexEntry.getDexFile();
-                    for (DexBackedClassDef classDef : dexFile.getClasses()) {
-                        String classType = classDef.getType();
+                val dexInZip: ZipEntry = zip.nextElement()
+                if (dexInZip.name.startsWith("classes") && dexInZip.name.endsWith(".dex")) {
+                    dexCount++
+                    @Suppress("UNCHECKED_CAST")
+                    val dexEntry = DexFileFactory.loadDexEntry(appInstallFile, dexInZip.name, true, null)
+                            as MultiDexContainer.DexEntry<DexBackedDexFile>
+                    val dexFile = dexEntry.dexFile
+                    for (classDef in dexFile.classes) {
+                        var classType = classDef.type
+                        // 扫描 com/netease/cloudmusic、okhttp3 开头的类
                         if (classType.contains("com/netease/cloudmusic") || classType.contains("okhttp3")) {
-                            classType = classType.substring(1, classType.length() - 1).replace("/", ".");
-                            classCacheList.add(classType);
+                            classType = classType.substring(1, classType.length - 1).replace("/", ".")
+                            classCacheList!!.add(classType)
+                            classCount++
+                        } else {
+                            // 扫描混淆包名下的类（根包名为1-3个小写字母+数字，如 dl0、ek1、ab 等）
+                            // 混淆包名在不同版本会变化，通过正则匹配避免硬编码
+                            val path = classType.substring(1, classType.length - 1)
+                            val rootPackage = path.substringBefore("/", "")
+                            if (obfuscatePackagePattern.matcher(rootPackage).matches()) {
+                                classCacheList!!.add(path.replace("/", "."))
+                                classCount++
+                            }
                         }
                     }
                 }
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+            LogUtils.i("ClassHelper: DEX扫描完成 - dex文件数=$dexCount, 扫描类数=$classCount, 总缓存数=${classCacheList!!.size}")
+        } catch (e: Exception) {
+            LogUtils.e("ClassHelper: DEX扫描异常 - ${e.message}")
+            e.printStackTrace()
         } finally {
-            FileHelper.writeFileFromSD(classCachePath + File.separator + "class-" + version, classCacheList);
-            listener.onGet();
+            FileHelper.writeFileFromSD(classCachePath + File.separator + "class-$version-v$CACHE_SCHEMA_VERSION", classCacheList!!)
+            listener.onGet()
         }
     }
 
-    public interface OnCacheClassListener {
-        void onGet();
+    interface OnCacheClassListener {
+        fun onGet()
     }
 
-    public static List<String> getFilteredClasses(Pattern pattern, Comparator<String> comparator) {
-        List<String> list = Stream.of(classCacheList)
-                .filter(s -> pattern.matcher(s).find())
-                .toList();
-        Collections.sort(list, comparator);
-        return list;
+    @JvmStatic
+    fun getFilteredClasses(pattern: Pattern, comparator: Comparator<String>?): List<String> {
+        val cache = classCacheList ?: return emptyList()
+        val list = Stream.of(*cache.toTypedArray())
+            .filter { s -> pattern.matcher(s).find() }
+            .toList()
+        if (comparator != null) {
+            Collections.sort(list, comparator)
+        }
+        return list
     }
 
-    private static Class<?> getClassByXposed(String className) {
-        Class<?> clazz = findClassIfExists(className, classLoader);
+    /**
+     * 通过类名加载类（替代XposedHelpers.findClassIfExists的包装方法）
+     * 加载失败时回退到加载NeteaseMusicApplication类，确保Stream.map不返回null
+     */
+    private fun getClassByXposed(className: String): Class<*>? {
+        var clazz = findClassIfExists(className, classLoader!!)
         if (clazz == null)
-            clazz = findClassIfExists("com.netease.cloudmusic.NeteaseMusicApplication", classLoader);
-        return clazz;
+            clazz = findClassIfExists("com.netease.cloudmusic.NeteaseMusicApplication", classLoader!!)
+        return clazz
+    }
+
+    /**
+     * 安全加载类（替代XposedHelpers.findClassIfExists）
+     */
+    @JvmStatic
+    fun findClassIfExists(className: String, classLoader: ClassLoader): Class<*>? {
+        return try {
+            classLoader.loadClass(className)
+        } catch (e: ClassNotFoundException) {
+            null
+        }
+    }
+
+    /**
+     * 按精确参数类型查找方法（替代XposedHelpers.findMethodsByExactParameters）
+     */
+    private fun findMethodsByExactParameters(clazz: Class<*>, returnType: Class<*>?, vararg parameterTypes: Class<*>): List<Method> {
+        val result = mutableListOf<Method>()
+        for (method in clazz.declaredMethods) {
+            val methodParamTypes = method.parameterTypes
+            if (methodParamTypes.size != parameterTypes.size) continue
+            var paramsMatch = true
+            for (i in parameterTypes.indices) {
+                if (methodParamTypes[i] != parameterTypes[i]) {
+                    paramsMatch = false
+                    break
+                }
+            }
+            if (!paramsMatch) continue
+            if (returnType != null && method.returnType != returnType) continue
+            result.add(method)
+        }
+        return result
+    }
+
+    /**
+     * 按精确类型查找字段（替代XposedHelpers.findFirstFieldByExactType）
+     */
+    @Throws(NoSuchFieldException::class)
+    private fun findFirstFieldByExactType(clazz: Class<*>, type: Class<*>): Field {
+        for (field in clazz.declaredFields) {
+            if (field.type == type) {
+                return field
+            }
+        }
+        throw NoSuchFieldException("Field of type ${type.name} not found in ${clazz.name}")
     }
 
     /**
      * Cookie获取 - 代理请求时需要携带Cookie
      */
-    public static class Cookie {
-        private static Class<?> clazz, abstractClazz;
+    object Cookie {
+        private var clazz: Class<*>? = null
+        private var abstractClazz: Class<*>? = null
 
-        public static String getCookie(Context context) {
+        @JvmStatic
+        fun getCookie(context: Context): String {
             if (clazz == null) {
-                Pattern pattern;
-                if (versionCode < 154)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$");
-                else if (versionCode < 8008050)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$");
-                else
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.cookie\\.store\\.[a-zA-Z0-9]{1,25}$");
+                val pattern: Pattern = when {
+                    versionCode < 154 -> Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
+                    versionCode < 8008050 -> Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$")
+                    else -> Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.cookie\\.store\\.[a-zA-Z0-9]{1,25}$")
+                }
 
-                List<String> list = getFilteredClasses(pattern, null);
+                val list = getFilteredClasses(pattern, null)
 
                 try {
                     abstractClazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> c.getSuperclass() == Object.class)
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == ConcurrentHashMap.class))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == SharedPreferences.class))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == long.class))
-                            .findFirst()
-                            .get();
+                        .map { getClassByXposed(it) }
+                        .filter { it != null }
+                        .map { it!! }
+                        .filter { c -> Modifier.isPublic(c.modifiers) }
+                        .filter { c -> c.superclass == Any::class.java }
+                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == ConcurrentHashMap::class.java } }
+                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == SharedPreferences::class.java } }
+                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Long::class.javaPrimitiveType } }
+                        .findFirst()
+                        .orElse(null)
 
-                    if (versionCode >= 154) {
+                    if (versionCode >= 154 && abstractClazz != null) {
+                        val absClazz = abstractClazz!!
                         clazz = Stream.of(list)
-                                .map(ClassHelper::getClassByXposed)
-                                .filter(c -> Modifier.isPublic(c.getModifiers()))
-                                .filter(m -> !Modifier.isInterface(m.getModifiers()))
-                                .filter(c -> c.getSuperclass() == abstractClazz)
-                                .findFirst()
-                                .get();
+                            .map { getClassByXposed(it) }
+                            .filter { it != null }
+                            .map { it!! }
+                            .filter { c -> Modifier.isPublic(c.modifiers) }
+                            .filter { c -> !Modifier.isInterface(c.modifiers) }
+                            .filter { c -> c.superclass == absClazz }
+                            .findFirst()
+                            .orElse(null)
                     } else {
-                        clazz = abstractClazz;
+                        clazz = abstractClazz
                     }
-                } catch (NoSuchElementException e) {
-                    Log.e(TAG, "ClassHelper: 找不到Cookie核心类");
+                } catch (e: NoSuchElementException) {
+                    LogUtils.e("ClassHelper: 找不到Cookie核心类")
                 }
             }
 
-            Object cookieString = null;
-            if (versionCode >= 154) {
-                Method cookieMethod = XposedHelpers.findMethodsByExactParameters(clazz, clazz)[0];
-                Object cookie = XposedHelpers.callStaticMethod(clazz, cookieMethod.getName());
-                for (Method method : XposedHelpers.findMethodsByExactParameters(abstractClazz, String.class)) {
-                    if (method.getTypeParameters().length == 0 && method.getModifiers() == Modifier.PUBLIC) {
-                        cookieString = XposedHelpers.callMethod(cookie, method.getName());
+            var cookieString: Any? = null
+            if (versionCode >= 154 && clazz != null && abstractClazz != null) {
+                val cookieMethod = findMethodsByExactParameters(clazz!!, clazz).getOrNull(0) ?: return "MUSIC_U="
+                val cookie = try {
+                    cookieMethod.invoke(null)
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: Cookie静态方法调用失败 - ${e.message}")
+                    return "MUSIC_U="
+                }
+                for (method in findMethodsByExactParameters(abstractClazz!!, String::class.java)) {
+                    if (method.typeParameters.isEmpty() && method.modifiers == Modifier.PUBLIC) {
+                        try {
+                            cookieString = method.invoke(cookie)
+                        } catch (e: Exception) {
+                            LogUtils.e("ClassHelper: Cookie实例方法调用失败 - ${e.message}")
+                        }
                     }
                 }
-            } else {
-                Method cookieMethod = XposedHelpers.findMethodsByExactParameters(clazz, String.class)[0];
-                cookieString = XposedHelpers.callStaticMethod(clazz, cookieMethod.getName());
+            } else if (clazz != null) {
+                val cookieMethod = findMethodsByExactParameters(clazz!!, String::class.java).getOrNull(0) ?: return "MUSIC_U="
+                try {
+                    cookieString = cookieMethod.invoke(null)
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: Cookie静态方法调用失败 - ${e.message}")
+                }
             }
 
-            return "MUSIC_U=" + cookieString;
+            return "MUSIC_U=$cookieString"
         }
     }
 
     /**
      * OkHttp3 Response封装 - EAPIHook旧版方式需要
      */
-    public static class OKHttp3Response {
-        private static Class<?> clazz;
+    class OKHttp3Response(private val okHttp3Response: Any) {
 
-        final Object okHttp3Response;
+        companion object {
+            private var clazz: Class<*>? = null
 
-        public OKHttp3Response(Object okHttp3Response) {
-            this.okHttp3Response = okHttp3Response;
-        }
+            fun getClazz(context: Context): Class<*>? {
+                if (clazz == null) {
+                    val pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,8}$")
+                    val list = getFilteredClasses(pattern, Collections.reverseOrder())
 
-        static Class<?> getClazz(Context context) {
-            if (clazz == null) {
-                Pattern pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,8}$");
-                List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
-
-                try {
-                    clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> !Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> c.getInterfaces().length == 1)
-                            .filter(c -> c.getInterfaces()[0] == Closeable.class)
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == int.class))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == String.class))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == long.class))
+                    try {
+                        clazz = Stream.of(list)
+                            .map { getClassByXposed(it) }
+                            .filter { it != null }
+                            .map { it!! }
+                            .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                            .filter { c -> Modifier.isPublic(c.modifiers) }
+                            .filter { c -> c.interfaces.size == 1 }
+                            .filter { c -> c.interfaces[0] == Closeable::class.java }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Int::class.javaPrimitiveType } }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == String::class.java } }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Long::class.javaPrimitiveType } }
                             .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到OKHttp3Response核心类，音源代理功能可能失效");
+                            .orElse(null)
+                    } catch (e: Exception) {
+                        LogUtils.e("ClassHelper: 找不到OKHttp3Response核心类，音源代理功能可能失效")
+                    }
                 }
+                return clazz
             }
-            return clazz;
         }
 
-        public Object getHeadersObject(Context context) throws IllegalAccessException, NullPointerException {
-            Field[] fields = getClazz(context).getDeclaredFields();
-            Field dataField = Stream.of(fields)
-                    .filter(f -> Stream.of(f.getType()).anyMatch(pf -> pf == OKHttp3Header.getClazz(context)))
-                    .filter(f -> Stream.of(f.getType().getDeclaredFields()).anyMatch(pf -> pf.getType() == String[].class))
-                    .findFirst().get();
+        @Throws(IllegalAccessException::class, NullPointerException::class)
+        fun getHeadersObject(context: Context): Any {
+            val fields = getClazz(context)!!.declaredFields
+            val dataField = Stream.of(*fields)
+                .filter { f -> f.type == OKHttp3Header.getClazz(context) }
+                .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type == Array<String>::class.java } }
+                .findFirst().get()
 
-            dataField.setAccessible(true);
-            return dataField.get(okHttp3Response);
+            dataField.isAccessible = true
+            return dataField.get(okHttp3Response)!!
         }
     }
 
     /**
      * OkHttp3 Header封装 - EAPIHook旧版方式需要
      */
-    public static class OKHttp3Header {
-        private static Class<?> clazz;
+    class OKHttp3Header(private val okHttp3Header: Any) {
 
-        final Object okHttp3Header;
+        companion object {
+            private var clazz: Class<*>? = null
 
-        public OKHttp3Header(Object okHttp3Header) {
-            this.okHttp3Header = okHttp3Header;
-        }
+            fun getClazz(context: Context): Class<*>? {
+                if (clazz == null) {
+                    val pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,7}$")
+                    val list = getFilteredClasses(pattern, Collections.reverseOrder())
 
-        static Class<?> getClazz(Context context) {
-            if (clazz == null) {
-                Pattern pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,7}$");
-                List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
-
-                try {
-                    clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> !Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == String[].class))
+                    try {
+                        clazz = Stream.of(list)
+                            .map { getClassByXposed(it) }
+                            .filter { it != null }
+                            .map { it!! }
+                            .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                            .filter { c -> Modifier.isPublic(c.modifiers) }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Array<String>::class.java } }
                             .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到OKHttp3Header核心类，音源代理功能可能失效");
+                            .orElse(null)
+                    } catch (e: Exception) {
+                        LogUtils.e("ClassHelper: 找不到OKHttp3Header核心类，音源代理功能可能失效")
+                    }
                 }
+                return clazz
             }
-            return clazz;
         }
 
-        public String[] getHeaders(Context context) throws IllegalAccessException, NullPointerException {
-            Field[] fields = getClazz(context).getDeclaredFields();
-            Field dataField = Stream.of(fields)
-                    .filter(f -> Stream.of(f.getType()).anyMatch(pf -> pf == String[].class))
-                    .findFirst().get();
+        @Throws(IllegalAccessException::class, NullPointerException::class)
+        fun getHeaders(context: Context): Array<String> {
+            val fields = getClazz(context)!!.declaredFields
+            val dataField = Stream.of(*fields)
+                .filter { f -> f.type == Array<String>::class.java }
+                .findFirst().get()
 
-            dataField.setAccessible(true);
-            return (String[]) dataField.get(okHttp3Header);
+            dataField.isAccessible = true
+            return dataField.get(okHttp3Header) as Array<String>
         }
     }
 
     /**
      * 获取请求返回 - EAPIHook旧版方式需要
      */
-    public static class HttpResponse {
-        private static Class<?> clazz;
-        private static Method getResultMethod;
+    class HttpResponse(private val httpResponse: Any) {
 
-        final Object httpResponse;
+        companion object {
+            private var clazz: Class<*>? = null
+            private var getResultMethod: Method? = null
 
-        public HttpResponse(Object httpResponse) {
-            this.httpResponse = httpResponse;
-        }
+            fun getClazz(context: Context): Class<*>? {
+                if (clazz == null) {
+                    val pattern: Pattern = if (versionCode < 154)
+                        Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
+                    else
+                        Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$")
+                    val list = getFilteredClasses(pattern, Collections.reverseOrder())
 
-        static Class<?> getClazz(Context context) {
-            if (clazz == null) {
-                Pattern pattern;
-                if (versionCode < 154)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$");
-                else
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$");
-                List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
-
-                try {
-                    clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> !Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> c.getSuperclass() == Object.class)
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == OKHttp3Response.getClazz(context)))
+                    try {
+                        clazz = Stream.of(list)
+                            .map { getClassByXposed(it) }
+                            .filter { it != null }
+                            .map { it!! }
+                            .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                            .filter { c -> Modifier.isPublic(c.modifiers) }
+                            .filter { c -> c.superclass == Any::class.java }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == OKHttp3Response.getClazz(context) } }
                             .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到HttpResponse核心类，音源代理功能可能失效");
+                            .orElse(null)
+                    } catch (e: Exception) {
+                        LogUtils.e("ClassHelper: 找不到HttpResponse核心类，音源代理功能可能失效")
+                    }
                 }
+                return clazz
             }
-            return clazz;
-        }
 
-        public Object getResponseObject(Context context) throws IllegalAccessException, NullPointerException {
-            Field[] fields = getClazz(context).getDeclaredFields();
-            Field dataField = Stream.of(fields)
-                    .filter(f -> Stream.of(f.getType().getInterfaces()).anyMatch(i -> i == Closeable.class))
-                    .filter(f -> Stream.of(f.getType().getDeclaredFields()).anyMatch(pf -> pf.getType().getName().startsWith("okhttp3")))
-                    .findFirst().get();
-
-            dataField.setAccessible(true);
-            return dataField.get(httpResponse);
-        }
-
-        public Object getEapi(Context context) throws IllegalAccessException, NullPointerException {
-            Field[] fields = getClazz(context).getDeclaredFields();
-            Field dataField = Stream.of(fields)
-                    .filter(c -> Modifier.isAbstract(c.getType().getModifiers()))
-                    .filter(c -> c.getType().getSuperclass() == Object.class)
-                    .filter(c -> Stream.of(c.getType().getDeclaredFields()).anyMatch(m -> m.getType().getName().startsWith("okhttp3")))
-                    .findFirst().get();
-
-            dataField.setAccessible(true);
-            return dataField.get(httpResponse);
-        }
-
-        public static Method getResultMethod(Context context) {
-            if (getResultMethod == null) {
-                try {
-                    List<Method> methodList = Arrays.asList(getClazz(context).getDeclaredMethods());
-                    getResultMethod = Stream.of(methodList)
-                            .filter(m -> m.getExceptionTypes().length == 2)
+            fun getResultMethod(context: Context): Method? {
+                if (getResultMethod == null) {
+                    try {
+                        val methodList = getClazz(context)?.declaredMethods?.toList() ?: return null
+                        getResultMethod = Stream.of(methodList)
+                            .filter { m -> m.exceptionTypes.size == 2 }
                             .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到getResultMethod，音源代理功能可能失效");
+                            .orElse(null)
+                    } catch (e: Exception) {
+                        LogUtils.e("ClassHelper: 找不到getResultMethod，音源代理功能可能失效")
+                    }
                 }
+                return getResultMethod
             }
-            return getResultMethod;
+        }
+
+        @Throws(IllegalAccessException::class, NullPointerException::class)
+        fun getResponseObject(context: Context): Any {
+            val fields = getClazz(context)!!.declaredFields
+            val dataField = Stream.of(*fields)
+                .filter { f -> Stream.of(*f.type.interfaces).anyMatch { i -> i == Closeable::class.java } }
+                .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type.name.startsWith("okhttp3") } }
+                .findFirst().get()
+
+            dataField.isAccessible = true
+            return dataField.get(httpResponse)!!
+        }
+
+        @Throws(IllegalAccessException::class, NullPointerException::class)
+        fun getEapi(context: Context): Any {
+            val fields = getClazz(context)!!.declaredFields
+            val dataField = Stream.of(*fields)
+                .filter { c -> Modifier.isAbstract(c.type.modifiers) }
+                .filter { c -> c.type.superclass == Any::class.java }
+                .filter { c -> Stream.of(*c.type.declaredFields).anyMatch { m -> m.type.name.startsWith("okhttp3") } }
+                .findFirst().get()
+
+            dataField.isAccessible = true
+            return dataField.get(httpResponse)!!
         }
     }
 
     /**
      * 获取请求URL - EAPIHook旧版方式需要
      */
-    public static class HttpUrl {
-        private static Class<?> clazz;
+    object HttpUrl {
+        private var clazz: Class<*>? = null
 
-        static Class<?> getClazz(Context context) {
+        fun getClazz(context: Context): Class<*>? {
             if (clazz == null) {
-                Pattern pattern;
-                if (versionCode < 154)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$");
+                val pattern: Pattern = if (versionCode < 154)
+                    Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
                 else
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$");
-                List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
+                    Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$")
+                val list = getFilteredClasses(pattern, Collections.reverseOrder())
 
                 try {
                     clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> c.getSuperclass() == Object.class)
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType().getName().startsWith("okhttp3")))
-                            .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到HttpUrl核心类，音源代理功能可能失效");
+                        .map { getClassByXposed(it) }
+                        .filter { it != null }
+                        .map { it!! }
+                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                        .filter { c -> Modifier.isPublic(c.modifiers) }
+                        .filter { c -> c.superclass == Any::class.java }
+                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type.name.startsWith("okhttp3") } }
+                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Int::class.javaPrimitiveType } }
+                        .findFirst()
+                        .orElse(null)
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: 找不到HttpUrl核心类，音源代理功能可能失效")
                 }
             }
-            return clazz;
+            return clazz
         }
 
-        public static Uri getUri(Context context, Object eapi) throws IllegalAccessException, NullPointerException {
-            Field uriField = XposedHelpers.findFirstFieldByExactType(getClazz(context), Uri.class);
-            uriField.setAccessible(true);
-            return (Uri) uriField.get(eapi);
+        fun getUri(context: Context, eapi: Any): Uri {
+            try {
+                val fields = eapi.javaClass.declaredFields
+                val dataField = Stream.of(*fields)
+                    .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type.name.startsWith("okhttp3") } }
+                    .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type == Int::class.javaPrimitiveType } }
+                    .findFirst().orElse(null) ?: return Uri.EMPTY
+
+                dataField.isAccessible = true
+                val urlObj = dataField.get(eapi) ?: return Uri.EMPTY
+
+                val urlFields = urlObj.javaClass.declaredFields
+                val urlField = Stream.of(*urlFields)
+                    .filter { f -> f.type == String::class.java }
+                    .findFirst().orElse(null) ?: return Uri.EMPTY
+
+                urlField.isAccessible = true
+                val url = urlField.get(urlObj) as? String ?: return Uri.EMPTY
+                return Uri.parse(url)
+            } catch (e: Exception) {
+                return Uri.EMPTY
+            }
         }
     }
 
     /**
      * 获取请求参数 - EAPIHook旧版方式需要
      */
-    public static class HttpParams {
-        private static Class<?> clazz;
-        private static Field paramsMap;
+    object HttpParams {
+        fun getParams(context: Context, eapi: Any): LinkedHashMap<String, String> {
+            val paramsMap = LinkedHashMap<String, String>()
+            try {
+                val fields = eapi.javaClass.declaredFields
+                val dataField = Stream.of(*fields)
+                    .filter { f -> f.type == LinkedHashMap::class.java }
+                    .findFirst().orElse(null) ?: return paramsMap
 
-        static Class<?> getClazz(Context context) {
-            if (clazz == null) {
-                Pattern pattern;
-                if (versionCode < 154)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$");
-                else
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$");
-                List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
-
-                try {
-                    clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> Stream.of(c.getInterfaces()).anyMatch(i -> i == Serializable.class))
-                            .filter(c -> !Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> Stream.of(c.getDeclaredFields()).anyMatch(m -> m.getType() == LinkedHashMap.class))
-                            .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到HttpParams核心类，音源代理功能可能失效");
+                dataField.isAccessible = true
+                @Suppress("UNCHECKED_CAST")
+                val rawMap = dataField.get(eapi) as? LinkedHashMap<String, Any> ?: return paramsMap
+                for (key in rawMap.keys) {
+                    val value = rawMap[key]
+                    paramsMap[key] = value?.toString() ?: ""
                 }
+            } catch (e: Exception) {
+                // 提取参数失败
             }
-            return clazz;
-        }
-
-        static Field getParamsMapField(Context context) {
-            if (paramsMap == null) {
-                Field[] fields = getClazz(context).getDeclaredFields();
-                paramsMap = Stream.of(fields)
-                        .filter(c -> Stream.of(c.getType()).anyMatch(m -> m == LinkedHashMap.class))
-                        .findFirst().get();
-                paramsMap.setAccessible(true);
-            }
-            return paramsMap;
-        }
-
-        public static LinkedHashMap<String, String> getParams(Context context, Object eapi) throws IllegalAccessException, NullPointerException {
-            List<Method> list = new ArrayList<>(Arrays.asList(findMethodsByExactParameters(eapi.getClass(), getClazz(context))));
-            if (list != null && list.size() != 0) {
-                Object params = XposedHelpers.callMethod(eapi, list.get(0).getName());
-                LinkedHashMap<String, String> map = (LinkedHashMap<String, String>) getParamsMapField(context).get(params);
-                Uri uri = HttpUrl.getUri(context, eapi);
-                for (String name : uri.getQueryParameterNames()) {
-                    String val = uri.getQueryParameter(name);
-                    map.put(name, val != null ? val : "");
-                }
-                return (LinkedHashMap<String, String>) getParamsMapField(context).get(params);
-            }
-            return new LinkedHashMap<>();
+            return paramsMap
         }
     }
 
     /**
-     * 拦截器 - ProxyHook需要
+     * CDN拦截器方法获取
      */
-    public static class HttpInterceptor {
-        private static Class<?> clazz;
-        private static List<Method> methodList;
+    object HttpInterceptor {
+        fun getMethodList(context: Context): List<Method>? {
+            try {
+                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\$")
+                val list = getFilteredClasses(pattern, null)
 
-        static Class<?> getClazz(Context context) {
-            if (clazz == null) {
-                Pattern pattern;
-                if (versionCode < 154)
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]");
-                else
-                    pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+");
+                val interceptorClass = Stream.of(list)
+                    .map { getClassByXposed(it) }
+                    .filter { it != null }
+                    .map { it!! }
+                    .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.name == "intercept" } }
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.name == "a" || m.name == "b" } }
+                    .findFirst()
+                    .orElse(null) ?: return null
+
+                val methods = mutableListOf<Method>()
+                for (m in interceptorClass.declaredMethods) {
+                    if (m.name == "a" || m.name == "b") {
+                        val paramTypes = m.parameterTypes
+                        if (paramTypes.size == 3) {
+                            methods.add(m)
+                        }
+                    }
+                }
+                return methods
+            } catch (e: Exception) {
+                LogUtils.e("ClassHelper: HttpInterceptor方法查找失败 - ${e.message}")
+                return null
+            }
+        }
+    }
+
+    /**
+     * 底部Tab管理类查找（完全通过特征匹配，不依赖混淆类名）
+     *
+     * 特征：
+     * 1. 实现 java.io.Serializable 接口
+     * 2. 包含返回 List 的无参 h() 方法
+     * 3. 包含 u(List):void 方法（接收 List 参数，返回 void）
+     *
+     * 使用正则匹配混淆包名下的类（根包名1-3个小写字母+数字），通过 DEX 缓存进行特征筛选
+     */
+    object BottomTabManager {
+        private var clazz: Class<*>? = null
+
+        @JvmStatic
+        fun getClazz(context: Context): Class<*>? {
+            if (clazz != null) return clazz
+            try {
+                // 正则匹配混淆包名下的类（不硬编码包名，兼容不同版本）
+                val pattern = Pattern.compile("^[a-z][a-z0-9]{0,2}\\.[a-z]{1,3}$")
+                val list = getFilteredClasses(pattern, null)
+                LogUtils.i("ClassHelper: BottomTabManager 特征匹配扫描混淆包类，共 ${list.size} 个")
+                // 调试：打印前20个类名，确认 dl0.g 是否在缓存中
+                list.take(20).forEach { LogUtils.i("ClassHelper: BottomTabManager 候选类 - $it") }
+                clazz = Stream.of(list)
+                    .map { getClassByXposed(it) }
+                    .filter { it != null }
+                    .map { it!! }
+                    // 特征1：实现 java.io.Serializable 接口
+                    .filter { c -> Serializable::class.java.isAssignableFrom(c) }
+                    // 特征2：包含返回 List 的无参 h() 方法
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                        m.name == "h" && m.parameterTypes.isEmpty() &&
+                        List::class.java.isAssignableFrom(m.returnType)
+                    } }
+                    // 特征3：包含 u(List):void 方法（接收 List 参数，返回 void）
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                        m.name == "u" && m.returnType == Void::class.javaPrimitiveType &&
+                        m.parameterTypes.size == 1 && List::class.java.isAssignableFrom(m.parameterTypes[0])
+                    } }
+                    .findFirst()
+                    .orElse(null)
+                if (clazz != null) {
+                    LogUtils.i("ClassHelper: 特征匹配找到BottomTabManager: ${clazz!!.name}")
+                } else {
+                    LogUtils.e("ClassHelper: 特征匹配未找到BottomTabManager")
+                }
+            } catch (e: Exception) {
+                LogUtils.e("ClassHelper: BottomTabManager查找失败 - ${e.message}")
+            }
+            return clazz
+        }
+    }
+
+    /**
+     * Tab索引管理类查找（完全通过特征匹配，不依赖混淆类名）
+     *
+     * 特征：
+     * 1. 继承 androidx.lifecycle.ViewModel
+     * 2. 包含 s4(String): int 方法
+     * 3. 包含 p4(int): String 方法
+     *
+     * 使用正则匹配混淆包名下的类（根包名1-3个小写字母+数字），通过 DEX 缓存进行特征筛选
+     */
+    object TabIndexManager {
+        private var clazz: Class<*>? = null
+
+        @JvmStatic
+        fun getClazz(context: Context): Class<*>? {
+            if (clazz != null) return clazz
+            try {
+                // 正则匹配混淆包名下的类（不硬编码包名，兼容不同版本）
+                val pattern = Pattern.compile("^[a-z][a-z0-9]{0,2}\\.[a-z]{1,3}$")
+                val list = getFilteredClasses(pattern, null)
+                val viewModelClass = findClassIfExists("androidx.lifecycle.ViewModel", context.classLoader)
+                    ?: return null
+                clazz = Stream.of(list)
+                    .map { getClassByXposed(it) }
+                    .filter { it != null }
+                    .map { it!! }
+                    .filter { c -> c.superclass == viewModelClass }
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                        m.name == "s4" && m.returnType == Int::class.javaPrimitiveType &&
+                        m.parameterTypes.size == 1 && m.parameterTypes[0] == String::class.java
+                    } }
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                        m.name == "p4" && m.returnType == String::class.java &&
+                        m.parameterTypes.size == 1 && m.parameterTypes[0] == Int::class.javaPrimitiveType
+                    } }
+                    .findFirst()
+                    .orElse(null)
+                if (clazz != null) {
+                    LogUtils.i("ClassHelper: 特征匹配找到TabIndexManager: ${clazz!!.name}")
+                } else {
+                    LogUtils.e("ClassHelper: 特征匹配未找到TabIndexManager")
+                }
+            } catch (e: Exception) {
+                LogUtils.e("ClassHelper: TabIndexManager查找失败 - ${e.message}")
+            }
+            return clazz
+        }
+    }
+
+    /**
+     * Fragment适配器类查找（完全通过特征匹配，不依赖混淆类名）
+     *
+     * 特征：
+     * 1. 继承 androidx.viewpager2.adapter.FragmentStateAdapter
+     * 2. 包含 createFragment(int): Fragment 方法
+     */
+    object FragmentPagerAdapter {
+        private var clazz: Class<*>? = null
+
+        @JvmStatic
+        fun getClazz(context: Context): Class<*>? {
+            if (clazz != null) return clazz
+            try {
+                // 特征匹配：在 com.netease.cloudmusic.adapter 包下查找
+                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.adapter\\.[a-z]{1,3}$")
+                val list = getFilteredClasses(pattern, null)
+                val fragmentStateAdapterClass = findClassIfExists(
+                    "androidx.viewpager2.adapter.FragmentStateAdapter", context.classLoader
+                ) ?: return null
+                val fragmentClass = findClassIfExists("androidx.fragment.app.Fragment", context.classLoader)
+                    ?: return null
+                clazz = Stream.of(list)
+                    .map { getClassByXposed(it) }
+                    .filter { it != null }
+                    .map { it!! }
+                    .filter { c -> fragmentStateAdapterClass.isAssignableFrom(c) }
+                    .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                        m.name == "createFragment" && m.returnType == fragmentClass &&
+                        m.parameterTypes.size == 1 && m.parameterTypes[0] == Int::class.javaPrimitiveType
+                    } }
+                    .findFirst()
+                    .orElse(null)
+                if (clazz != null) {
+                    LogUtils.i("ClassHelper: 特征匹配找到FragmentPagerAdapter: ${clazz!!.name}")
+                } else {
+                    LogUtils.e("ClassHelper: 特征匹配未找到FragmentPagerAdapter")
+                }
+            } catch (e: Exception) {
+                LogUtils.e("ClassHelper: FragmentPagerAdapter查找失败 - ${e.message}")
+            }
+            return clazz
+        }
+    }
+
+    /**
+     * 下载传输类查找 - DownloadMD5Hook需要
+     * 查找 com.netease.cloudmusic.module.transfer.download 下的混淆类
+     */
+    object DownloadTransfer {
+        private var checkMd5Method: Method? = null
+        private var checkDownloadStatusMethod: Method? = null
+
+        /**
+         * 下载完成后的MD5检查方法
+         * 特征：4个参数，第1个为File，第2个为File
+         */
+        @JvmStatic
+        fun getCheckMd5Method(context: Context): Method? {
+            if (checkMd5Method == null) {
+                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.transfer\\.download\\.[a-z0-9]{1,2}$")
+                val list = getFilteredClasses(pattern, Collections.reverseOrder())
+
                 try {
-                    List<String> list = ClassHelper.getFilteredClasses(pattern, Collections.reverseOrder());
-                    clazz = Stream.of(list)
-                            .map(ClassHelper::getClassByXposed)
-                            .filter(c -> Stream.of(c.getInterfaces()).anyMatch(i -> i.getName().contains("Interceptor"))
-                                    || (c.getSuperclass() != null && Stream.of(c.getSuperclass().getInterfaces()).anyMatch(i -> i.getName().contains("Interceptor"))))
-                            .filter(c -> !Modifier.isAbstract(c.getModifiers()))
-                            .filter(c -> Modifier.isPublic(c.getModifiers()))
-                            .filter(c -> Stream.of(c.getDeclaredMethods()).anyMatch(m -> m.getReturnType().getName().contains("Pair")))
+                    val targetClass = Stream.of(list)
+                        .map { getClassByXposed(it) }
+                        .filter { it != null }
+                        .map { it!! }
+                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                        .filter { c -> Modifier.isPublic(c.modifiers) }
+                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                            m.parameterTypes.size == 4 &&
+                            m.parameterTypes[0] == File::class.java &&
+                            m.parameterTypes[1] == File::class.java
+                        }}
+                        .findFirst()
+                        .orElse(null)
+
+                    if (targetClass != null) {
+                        checkMd5Method = Stream.of(*targetClass.declaredMethods)
+                            .filter { m -> m.parameterTypes.size == 4 }
+                            .filter { m -> m.parameterTypes[0] == File::class.java }
+                            .filter { m -> m.parameterTypes[1] == File::class.java }
                             .findFirst()
-                            .get();
-                } catch (Exception e) {
-                    Log.e(TAG, "ClassHelper: 找不到HttpInterceptor核心类，音源代理功能可能失效");
+                            .orElse(null)
+                    }
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: 找不到Transfer核心类 - ${e.message}")
                 }
             }
-            return clazz;
+            return checkMd5Method
         }
 
-        public static List<Method> getMethodList(Context context) {
-            if (methodList == null) {
-                methodList = new ArrayList<>();
-                Class<?> interceptorClazz = getClazz(context);
-                if (interceptorClazz != null) {
-                    methodList.addAll(Stream.of(interceptorClazz.getDeclaredMethods())
-                            .filter(m -> m.getExceptionTypes().length == 1)
-                            .filter(m -> m.getParameterTypes().length == 5)
-                            .filter(m -> m.getReturnType().getName().contains("Response"))
-                            .toList());
+        /**
+         * 下载之前的下载状态检查方法
+         * 特征：返回long，5个参数，第2个为int，第4个为File，第5个为long
+         */
+        @JvmStatic
+        fun getCheckDownloadStatusMethod(context: Context): Method? {
+            if (checkDownloadStatusMethod == null) {
+                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.transfer\\.download\\.[a-z0-9]{1,2}$")
+                val list = getFilteredClasses(pattern, Collections.reverseOrder())
+
+                try {
+                    val targetClass = Stream.of(list)
+                        .map { getClassByXposed(it) }
+                        .filter { it != null }
+                        .map { it!! }
+                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                        .filter { c -> Modifier.isPublic(c.modifiers) }
+                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
+                            m.returnType == Long::class.javaPrimitiveType &&
+                            m.parameterTypes.size == 5 &&
+                            m.parameterTypes[1] == Integer.TYPE &&
+                            m.parameterTypes[3] == File::class.java &&
+                            m.parameterTypes[4] == Long::class.javaPrimitiveType
+                        }}
+                        .findFirst()
+                        .orElse(null)
+
+                    if (targetClass != null) {
+                        checkDownloadStatusMethod = Stream.of(*targetClass.declaredMethods)
+                            .filter { m -> m.returnType == Long::class.javaPrimitiveType }
+                            .filter { m -> m.parameterTypes.size == 5 }
+                            .filter { m -> m.parameterTypes[1] == Integer.TYPE }
+                            .filter { m -> m.parameterTypes[3] == File::class.java }
+                            .filter { m -> m.parameterTypes[4] == Long::class.javaPrimitiveType }
+                            .findFirst()
+                            .orElse(null)
+                    }
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: 找不到Transfer状态检查方法 - ${e.message}")
                 }
             }
-            return methodList;
+            return checkDownloadStatusMethod
+        }
+    }
+
+    /**
+     * 广告类查找 - AdExtraHook需要
+     * 查找 com.netease.cloudmusic.module.ad 下的混淆类
+     */
+    object Ad {
+        private var adClazz: Class<*>? = null
+        private var clazz: Class<*>? = null
+
+        @JvmStatic
+        fun getClazz(context: Context): Class<*>? {
+            if (clazz == null) {
+                adClazz = findClassIfExists("com.netease.cloudmusic.meta.Ad", classLoader!!)
+                try {
+                    val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.ad\\.[a-z]$")
+                    val list = getFilteredClasses(pattern, Collections.reverseOrder())
+                    clazz = Stream.of(list)
+                        .map { getClassByXposed(it) }
+                        .filter { it != null }
+                        .map { it!! }
+                        .filter { c -> Modifier.isPublic(c.modifiers) }
+                        .filter { c -> !Modifier.isInterface(c.modifiers) }
+                        .filter { c -> !Modifier.isStatic(c.modifiers) }
+                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
+                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.returnType.name.contains("VideoAdInfo") } }
+                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.returnType == adClazz } }
+                        .findFirst()
+                        .orElse(null)
+                } catch (e: Exception) {
+                    LogUtils.e("ClassHelper: Ad类查找失败 - ${e.message}")
+                }
+            }
+            return clazz
+        }
+
+        /**
+         * 获取广告相关方法列表
+         * 筛选返回类型为meta包下类、且参数包含JSONObject的方法
+         */
+        @JvmStatic
+        fun getAdMethod(context: Context): List<Method>? {
+            return try {
+                val adClass = getClazz(context) ?: return null
+                val methodList = adClass.declaredMethods.toList()
+                val hookMethodList = Stream.of(methodList)
+                    .filter { m -> m.returnType.name.contains("com.netease.cloudmusic.meta") }
+                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c == JSONObject::class.java } }
+                    .toList()
+                hookMethodList.addAll(Stream.of(methodList)
+                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c.name.contains("com.netease.cloudmusic.meta") } }
+                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c == JSONObject::class.java } }
+                    .toList())
+                hookMethodList
+            } catch (e: Exception) {
+                LogUtils.e("ClassHelper: getAdMethod失败 - ${e.message}")
+                null
+            }
         }
     }
 }

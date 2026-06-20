@@ -1,18 +1,17 @@
-package com.raincat.dolby_beta.net;
-
-import java.util.HashMap;
+/**
+ * 请求封装 - HTTP/HTTPS请求参数容器
+ *
+ */
+package com.raincat.dolby_beta.net
 
 /**
- * 请求封装
- * Created by Administrator on 2018/3/29 0029.
+ * 请求参数封装类
  */
-
-class Request {
-    String method = "";
-    String url = "";
-    String param = "";
-    HashMap<String, Object> header = new HashMap<>();
-
-    int reTry = 0;
-    int timeout = 10000;
+internal class Request {
+    var method: String = ""
+    var url: String = ""
+    var param: String = ""
+    var header: HashMap<String, Any> = HashMap()
+    var reTry: Int = 0
+    var timeout: Int = 10000
 }

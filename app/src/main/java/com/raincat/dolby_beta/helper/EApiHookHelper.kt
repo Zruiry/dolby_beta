@@ -1,22 +1,19 @@
-package com.raincat.dolby_beta.helper;
-
-import java.util.LinkedHashMap;
-
-import de.robv.android.xposed.XposedHelpers;
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2026/06/13
- *     desc   : 新版网易云EAPI Hook辅助类
- *              用于从新版OkHttp请求对象中提取请求参数
- *              新版网易云中，请求参数存储在 request.tag() 对象的 J() 方法返回值中
- *              J() 返回的 n72.a 对象包含 LinkedHashMap<String, Object> 类型的参数Map
- *     version: 1.0
- * </pre>
+ * 新版网易云EAPI Hook辅助类 - 从OkHttp请求对象中提取请求参数
+ * 新版网易云中，请求参数存储在 request.tag() 对象的 J() 方法返回值中
+ * J() 返回的 n72.a 对象包含 LinkedHashMap<String, Object> 类型的参数Map
+ *
+ * 从Legacy API迁移到Modern libxposed API
+ * 旧版：XposedHelpers.callMethod/getObjectField → 新版：Java反射Method.invoke/Field.get
+ *
  */
-public class EApiHookHelper {
+package com.raincat.dolby_beta.helper
+
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.util.LinkedHashMap
+
+object EApiHookHelper {
 
     /**
      * 从OkHttp Request对象中提取请求参数
@@ -28,92 +25,104 @@ public class EApiHookHelper {
      * @param request okhttp3.Request 对象
      * @return 请求参数Map，键值对均为String类型；如果提取失败返回空Map
      */
-    @SuppressWarnings("unchecked")
-    public static LinkedHashMap<String, String> getRequestParams(Object request) {
-        LinkedHashMap<String, String> result = new LinkedHashMap<>();
+    @JvmStatic
+    @Suppress("UNCHECKED_CAST")
+    fun getRequestParams(request: Any): LinkedHashMap<String, String> {
+        val result = LinkedHashMap<String, String>()
         try {
-            // 获取请求标签对象 request.tag()
-            Object tag = XposedHelpers.callMethod(request, "tag");
-            if (tag == null) return result;
+            // 旧版：XposedHelpers.callMethod(request, "tag")
+            // 新版：Java反射调用Method.invoke
+            val tag = callMethod(request, "tag") ?: return result
 
-            // 检查tag是否是o72.a类型（EAPI请求标签）
-            Class<?> tagClass = tag.getClass();
-            // o72.a继承自o72.p，o72.p继承自o72.f
-            // o72.f中有J()方法返回n72.a（请求参数容器）
             try {
-                Object paramsContainer = XposedHelpers.callMethod(tag, "J");
-                if (paramsContainer == null) return result;
+                // 旧版：XposedHelpers.callMethod(tag, "J")
+                // 新版：Java反射调用
+                val paramsContainer = callMethod(tag, "J") ?: return result
 
-                // n72.a中有f256148a字段（LinkedHashMap<String, Object>）
                 // 尝试通过i()方法获取参数Map（更安全的方式）
                 try {
-                    Object paramsMap = XposedHelpers.callMethod(paramsContainer, "i");
-                    if (paramsMap instanceof LinkedHashMap) {
-                        LinkedHashMap<String, Object> rawMap = (LinkedHashMap<String, Object>) paramsMap;
-                        for (String key : rawMap.keySet()) {
-                            Object value = rawMap.get(key);
-                            result.put(key, value != null ? value.toString() : "");
+                    val paramsMap = callMethod(paramsContainer, "i")
+                    if (paramsMap is LinkedHashMap<*, *>) {
+                        val rawMap = paramsMap as LinkedHashMap<String, Any>
+                        for (key in rawMap.keys) {
+                            val value = rawMap[key]
+                            result[key] = value?.toString() ?: ""
                         }
                     }
-                } catch (Exception e) {
+                } catch (e: Exception) {
                     // i()方法调用失败，尝试直接访问字段
                     try {
-                        Object paramsMap = XposedHelpers.getObjectField(paramsContainer, "f256148a");
-                        if (paramsMap instanceof LinkedHashMap) {
-                            LinkedHashMap<String, Object> rawMap = (LinkedHashMap<String, Object>) paramsMap;
-                            for (String key : rawMap.keySet()) {
-                                Object value = rawMap.get(key);
-                                result.put(key, value != null ? value.toString() : "");
+                        val paramsMap = getObjectField(paramsContainer, "f256148a")
+                        if (paramsMap is LinkedHashMap<*, *>) {
+                            val rawMap = paramsMap as LinkedHashMap<String, Any>
+                            for (key in rawMap.keys) {
+                                val value = rawMap[key]
+                                result[key] = value?.toString() ?: ""
                             }
                         }
-                    } catch (Exception e2) {
+                    } catch (e2: Exception) {
                         // 字段名可能因混淆变化，尝试遍历字段查找LinkedHashMap
-                        extractParamsByTraversal(paramsContainer, result);
+                        extractParamsByTraversal(paramsContainer, result)
                     }
                 }
-            } catch (Exception e) {
+            } catch (e: Exception) {
                 // J()方法不存在，尝试通过反射遍历字段查找参数
-                extractParamsByTraversal(tag, result);
+                extractParamsByTraversal(tag, result)
             }
-        } catch (Exception e) {
+        } catch (e: Exception) {
             // 提取参数失败，返回空Map
         }
-        return result;
+        return result
     }
 
     /**
      * 通过反射遍历对象字段查找LinkedHashMap类型的参数Map
      * 当方法名和字段名因混淆变化时，通过类型匹配来查找参数
-     *
-     * @param obj    要遍历的对象
-     * @param result 用于存储提取结果的Map
      */
-    @SuppressWarnings("unchecked")
-    private static void extractParamsByTraversal(Object obj, LinkedHashMap<String, String> result) {
+    @Suppress("UNCHECKED_CAST")
+    private fun extractParamsByTraversal(obj: Any, result: LinkedHashMap<String, String>) {
         try {
-            java.lang.reflect.Field[] fields = obj.getClass().getDeclaredFields();
-            for (java.lang.reflect.Field field : fields) {
-                field.setAccessible(true);
-                Object value = field.get(obj);
-                if (value instanceof LinkedHashMap) {
-                    // 检查Map的键是否为String类型
-                    LinkedHashMap<?, ?> map = (LinkedHashMap<?, ?>) value;
-                    if (!map.isEmpty()) {
-                        Object firstKey = map.keySet().iterator().next();
-                        if (firstKey instanceof String) {
-                            // 找到参数Map
-                            LinkedHashMap<String, Object> rawMap = (LinkedHashMap<String, Object>) value;
-                            for (String key : rawMap.keySet()) {
-                                Object v = rawMap.get(key);
-                                result.put(key, v != null ? v.toString() : "");
+            val fields = obj.javaClass.declaredFields
+            for (field in fields) {
+                field.isAccessible = true
+                val value = field.get(obj)
+                if (value is LinkedHashMap<*, *>) {
+                    val map = value as LinkedHashMap<*, *>
+                    if (map.isNotEmpty()) {
+                        val firstKey = map.keys.iterator().next()
+                        if (firstKey is String) {
+                            val rawMap = value as LinkedHashMap<String, Any>
+                            for (key in rawMap.keys) {
+                                val v = rawMap[key]
+                                result[key] = v?.toString() ?: ""
                             }
-                            return;
+                            return
                         }
                     }
                 }
             }
-        } catch (Exception e) {
+        } catch (e: Exception) {
             // 遍历失败
         }
+    }
+
+    /**
+     * 通过反射调用对象的无参方法（替代XposedHelpers.callMethod）
+     */
+    @Throws(Exception::class)
+    private fun callMethod(obj: Any, methodName: String): Any? {
+        val method: Method = obj.javaClass.getDeclaredMethod(methodName)
+        method.isAccessible = true
+        return method.invoke(obj)
+    }
+
+    /**
+     * 通过反射获取对象的字段值（替代XposedHelpers.getObjectField）
+     */
+    @Throws(Exception::class)
+    private fun getObjectField(obj: Any, fieldName: String): Any? {
+        val field: Field = obj.javaClass.getDeclaredField(fieldName)
+        field.isAccessible = true
+        return field.get(obj)
     }
 }

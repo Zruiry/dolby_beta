@@ -1,66 +1,38 @@
-package com.raincat.dolby_beta.view.proxy.configuration;
+package com.raincat.dolby_beta.view.proxy.configuration
 
-import android.content.Context;
-import android.text.Editable;
-import android.text.InputFilter;
-import android.text.TextWatcher;
-import android.text.method.DigitsKeyListener;
-import android.util.AttributeSet;
-
-import com.raincat.dolby_beta.helper.SettingHelper;
-import com.raincat.dolby_beta.view.BaseDialogInputItem;
+import android.content.Context
+import android.text.Editable
+import android.text.InputFilter
+import android.text.TextWatcher
+import android.text.method.DigitsKeyListener
+import android.util.AttributeSet
+import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.view.BaseDialogInputItem
 
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2021/09/09
- *     desc   : 代理端口
- *     version: 1.0
- * </pre>
+ * 代理端口配置
  */
+class ProxyPortView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
+) : BaseDialogInputItem(context, attrs, defStyle) {
 
-public class ProxyPortView extends BaseDialogInputItem {
-    public ProxyPortView(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-    }
+    init {
+        title = SettingHelper.proxy_port_title
+        editView.keyListener = DigitsKeyListener.getInstance("0123456789")
+        editView.filters = arrayOf(InputFilter.LengthFilter(5))
+        setData(SettingHelper.getInstance().getProxyPort().toString(), SettingHelper.proxy_port_default.toString())
 
-    public ProxyPortView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
+        defaultView.setOnClickListener {
+            editView.setText(SettingHelper.proxy_port_default.toString())
+            editView.setSelection(editView.text.length)
+        }
 
-    public ProxyPortView(Context context) {
-        super(context);
-    }
-
-    @Override
-    public void init(Context context, AttributeSet attrs) {
-        super.init(context, attrs);
-        title = SettingHelper.proxy_port_title;
-        editView.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
-        editView.setFilters(new InputFilter[]{new InputFilter.LengthFilter(5)});
-        setData(SettingHelper.getInstance().getProxyPort() + "", SettingHelper.proxy_port_default + "");
-
-        defaultView.setOnClickListener(view -> {
-            editView.setText(SettingHelper.proxy_port_default + "");
-            editView.setSelection(editView.getText().length());
-        });
-
-        editView.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
+        editView.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(editable: Editable) {
+                SettingHelper.getInstance().setProxyPort(editView.text.toString())
             }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                SettingHelper.getInstance().setProxyPort(editView.getText().toString());
-            }
-        });
+        })
     }
 }

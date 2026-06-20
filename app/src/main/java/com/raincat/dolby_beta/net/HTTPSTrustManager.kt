@@ -1,49 +1,57 @@
-package com.raincat.dolby_beta.net;
+/**
+ * HTTPS信任管理器 - 信任所有SSL证书
+ * 用于代理模式下绕过SSL证书验证
+ *
+ */
+package com.raincat.dolby_beta.net
 
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
+import java.security.KeyManagementException
+import java.security.NoSuchAlgorithmException
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
+class HTTPSTrustManager : X509TrustManager {
 
-public class HTTPSTrustManager implements X509TrustManager {
-    private static TrustManager[] trustManagers;
-
-    @Override
-    public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws java.security.cert.CertificateException {
+    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+        // 信任所有客户端证书
     }
 
-    @Override
-    public void checkServerTrusted(X509Certificate[] x509Certificates, String s) throws java.security.cert.CertificateException {
+    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+        // 信任所有服务端证书
     }
 
-    @Override
-    public X509Certificate[] getAcceptedIssuers() {
-        // 返回非空数组，避免某些Android版本上因空数组导致证书验证仍失败
-        // X509TrustManager接口规范要求返回受信任的CA证书数组，
-        // 信任所有证书的实现应返回空数组而非null，但部分Android版本
-        // 对空数组的处理存在兼容性问题，因此返回一个包含空元素的数组
-        return new X509Certificate[0];
+    override fun getAcceptedIssuers(): Array<X509Certificate> {
+        // 返回空数组（非null），避免某些Android版本兼容性问题
+        return arrayOf()
     }
 
-    public static void allowAllSSL() {
-        HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+    companion object {
+        private var trustManagers: Array<TrustManager>? = null
 
-        SSLContext context = null;
-        if (trustManagers == null) {
-            trustManagers = new TrustManager[]{new HTTPSTrustManager()};
+        /**
+         * 设置全局信任所有SSL证书
+         */
+        @JvmStatic
+        fun allowAllSSL() {
+            HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
+
+            if (trustManagers == null) {
+                trustManagers = arrayOf(HTTPSTrustManager())
+            }
+
+            try {
+                val context = SSLContext.getInstance("TLS")
+                context.init(null, trustManagers, SecureRandom())
+                HttpsURLConnection.setDefaultSSLSocketFactory(context.socketFactory)
+            } catch (e: NoSuchAlgorithmException) {
+                e.printStackTrace()
+            } catch (e: KeyManagementException) {
+                e.printStackTrace()
+            }
         }
-
-        try {
-            context = SSLContext.getInstance("TLS");
-            context.init(null, trustManagers, new SecureRandom());
-        } catch (NoSuchAlgorithmException | KeyManagementException e) {
-            e.printStackTrace();
-        }
-        HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
     }
 }

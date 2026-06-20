@@ -1,63 +1,36 @@
-package com.raincat.dolby_beta.view.proxy.configuration;
+package com.raincat.dolby_beta.view.proxy.configuration
 
-import android.content.Context;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.text.method.DigitsKeyListener;
-import android.util.AttributeSet;
-import com.raincat.dolby_beta.helper.SettingHelper;
-import com.raincat.dolby_beta.view.BaseDialogInputItem;
+import android.content.Context
+import android.text.Editable
+import android.text.TextWatcher
+import android.text.method.DigitsKeyListener
+import android.util.AttributeSet
+import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.view.BaseDialogInputItem
 
 /**
- * <pre>
- *     author : Luoxingran
- *     e-mail : szb5845201314@gmail.com
- *     time   : 2021/12/14
- *     desc   : http代理模式
- *     version: 1.0
- * </pre>
+ * HTTP代理配置
  */
+class ProxyHttpView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
+) : BaseDialogInputItem(context, attrs, defStyle) {
 
-public class ProxyHttpView extends BaseDialogInputItem {
-    public ProxyHttpView(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-    }
+    init {
+        title = SettingHelper.http_proxy_title
+        editView.keyListener = DigitsKeyListener.getInstance("0123456789.qwertyuiopasdfghjklzxcvbnm")
+        setData(SettingHelper.getInstance().getHttpProxy(), SettingHelper.http_proxy_default)
 
-    public ProxyHttpView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
+        defaultView.setOnClickListener {
+            editView.setText(SettingHelper.http_proxy_default)
+            editView.setSelection(editView.text.length)
+        }
 
-    public ProxyHttpView(Context context) {
-        super(context);
-    }
-
-    @Override
-    public void init(Context context, AttributeSet attrs) {
-        super.init(context, attrs);
-        title = SettingHelper.http_proxy_title;
-        editView.setKeyListener(DigitsKeyListener.getInstance("0123456789.qwertyuiopasdfghjklzxcvbnm"));
-        setData(SettingHelper.getInstance().getHttpProxy() + "", SettingHelper.http_proxy_default);
-
-        defaultView.setOnClickListener(view -> {
-            editView.setText(SettingHelper.http_proxy_default);
-            editView.setSelection(editView.getText().length());
-        });
-
-        editView.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
+        editView.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(editable: Editable) {
+                SettingHelper.getInstance().setHttpProxy(editView.text.toString())
             }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                SettingHelper.getInstance().setHttpProxy(editView.getText().toString());
-            }
-        });
+        })
     }
 }

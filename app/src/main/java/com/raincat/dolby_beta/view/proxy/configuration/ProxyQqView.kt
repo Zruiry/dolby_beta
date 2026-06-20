@@ -1,53 +1,34 @@
-package com.raincat.dolby_beta.view.proxy.configuration;
+package com.raincat.dolby_beta.view.proxy.configuration
 
-import android.content.Context;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.util.AttributeSet;
-
-import com.raincat.dolby_beta.helper.SettingHelper;
-import com.raincat.dolby_beta.view.BaseDialogInputItem;
+import android.content.Context
+import android.text.Editable
+import android.text.TextWatcher
+import android.util.AttributeSet
+import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.view.BaseDialogInputItem
 
 /**
  * QQ Cookie配置视图
  */
-public class ProxyQqView extends BaseDialogInputItem {
-    public ProxyQqView(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-    }
+class ProxyQqView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
+) : BaseDialogInputItem(context, attrs, defStyle) {
 
-    public ProxyQqView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-    }
+    init {
+        title = SettingHelper.qq_cookie_title
+        setData(SettingHelper.getInstance().getQqCookie(), SettingHelper.qq_cookie_default)
 
-    public ProxyQqView(Context context) {
-        super(context);
-    }
+        defaultView.setOnClickListener {
+            editView.setText(SettingHelper.qq_cookie_default)
+            editView.setSelection(editView.text.length)
+        }
 
-    @Override
-    public void init(Context context, AttributeSet attrs) {
-        super.init(context, attrs);
-        title = SettingHelper.qq_cookie_title;
-        setData(SettingHelper.getInstance().getQqCookie(), SettingHelper.qq_cookie_default);
-
-        defaultView.setOnClickListener(view -> {
-            editView.setText(SettingHelper.qq_cookie_default);
-            editView.setSelection(editView.getText().length());
-        });
-
-        editView.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+        editView.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(editable: Editable) {
+                SettingHelper.getInstance().setQqCookie(editView.text.toString())
             }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                SettingHelper.getInstance().setQqCookie(editView.getText().toString());
-            }
-        });
+        })
     }
 }

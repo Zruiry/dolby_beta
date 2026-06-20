@@ -1,81 +1,84 @@
-package com.raincat.dolby_beta.utils;
-
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2020/03/24
- *     desc   : EAPI加解密
- *     version: 1.0
- * </pre>
+ * EAPI加解密工具 - AES-128-ECB模式
+ * 加密算法：AES/ECB/PKCS5Padding
+ * 输出格式：Hex化字符串
+ *
  */
-public class NeteaseAES2 {
-    private final static byte[] aesKey = "e82ckenh8dichen8".getBytes();
+package com.raincat.dolby_beta.utils
+
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
+
+object NeteaseAES2 {
+
+    /** EAPI固定密钥 */
+    private val AES_KEY = "e82ckenh8dichen8".toByteArray()
 
     /**
-     * AES 加密算法为：AES-128-ECB，输出格式为：Hex化字符串
+     * AES-128-ECB加密，输出Hex字符串
      *
-     * @param sSrc 参数值
+     * @param sSrc 待加密明文
+     * @return Hex编码的密文（大写），失败返回null
      */
-    public static String Encrypt(String sSrc) {
-        try {
-            SecretKeySpec skeySpec = new SecretKeySpec(aesKey, "AES");
-            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");// "算法/模式/补码方式"
-            cipher.init(Cipher.ENCRYPT_MODE, skeySpec);
-            byte[] encrypted = cipher.doFinal(sSrc.getBytes());
-            return byteToHex(encrypted);
-        } catch (Exception ex) {
-            return null;
+    @JvmStatic
+    fun encrypt(sSrc: String): String? {
+        return try {
+            val skeySpec = SecretKeySpec(AES_KEY, "AES")
+            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            cipher.init(Cipher.ENCRYPT_MODE, skeySpec)
+            val encrypted = cipher.doFinal(sSrc.toByteArray())
+            byteToHex(encrypted)
+        } catch (ex: Exception) {
+            null
         }
     }
 
     /**
-     * @param sSrc 参数值
+     * AES-128-ECB解密，输入Hex字符串
+     *
+     * @param sSrc Hex编码的密文
+     * @return 解密后的明文，失败返回null
      */
-    // 解密
-    public static String Decrypt(String sSrc) {
-        try {
-            byte[] encrypted = hexToByte(sSrc);
-            SecretKeySpec skeySpec = new SecretKeySpec(aesKey, "AES");
-            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, skeySpec);
-            byte[] original = cipher.doFinal(encrypted);
-            return new String(original);
-        } catch (Exception ex) {
-            System.out.println(ex.toString());
-            return null;
+    @JvmStatic
+    fun decrypt(sSrc: String): String? {
+        return try {
+            val encrypted = hexToByte(sSrc)
+            val skeySpec = SecretKeySpec(AES_KEY, "AES")
+            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, skeySpec)
+            String(cipher.doFinal(encrypted))
+        } catch (ex: Exception) {
+            null
         }
     }
 
     /**
-     * hex转byte数组
+     * Hex字符串转byte数组
      */
-    public static byte[] hexToByte(String hex) {
-        int m = 0, n = 0;
-        int byteLen = hex.length() / 2; // 每两个字符描述一个字节
-        byte[] ret = new byte[byteLen];
-        for (int i = 0; i < byteLen; i++) {
-            m = i * 2 + 1;
-            n = m + 1;
-            int intVal = Integer.decode("0x" + hex.substring(i * 2, m) + hex.substring(m, n));
-            ret[i] = (byte) intVal;
+    @JvmStatic
+    fun hexToByte(hex: String): ByteArray {
+        val byteLen = hex.length / 2
+        val ret = ByteArray(byteLen)
+        for (i in 0 until byteLen) {
+            val m = i * 2 + 1
+            val n = m + 1
+            val intVal = Integer.decode("0x${hex.substring(i * 2, m)}${hex.substring(m, n)}")
+            ret[i] = intVal.toByte()
         }
-        return ret;
+        return ret
     }
 
     /**
-     * byte数组转hex
+     * byte数组转Hex字符串（大写）
      */
-    public static String byteToHex(byte[] bytes) {
-        String strHex = "";
-        StringBuilder sb = new StringBuilder("");
-        for (byte aByte : bytes) {
-            strHex = Integer.toHexString(aByte & 0xFF);
-            sb.append((strHex.length() == 1) ? "0" + strHex : strHex); // 每个字节由两个字符表示，位数不够，高位补0
+    @JvmStatic
+    fun byteToHex(bytes: ByteArray): String {
+        val sb = StringBuilder()
+        for (b in bytes) {
+            val strHex = Integer.toHexString(b.toInt() and 0xFF)
+            // 每个字节由两个字符表示，位数不够高位补0
+            sb.append(if (strHex.length == 1) "0$strHex" else strHex)
         }
-        return sb.toString().trim().toUpperCase();
+        return sb.toString().trim { it <= ' ' }.uppercase()
     }
 }

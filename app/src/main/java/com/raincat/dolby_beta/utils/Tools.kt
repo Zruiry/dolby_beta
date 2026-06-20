@@ -1,88 +1,93 @@
-package com.raincat.dolby_beta.utils;
-
-import android.app.ActivityManager;
-import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
-import android.widget.Toast;
-
-import com.stericson.RootShell.exceptions.RootDeniedException;
-import com.stericson.RootShell.execution.Command;
-import com.stericson.RootTools.RootTools;
-
-import java.io.IOException;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.concurrent.TimeoutException;
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2019/09/08
- *     desc   : 工具类
- *     version: 1.0
- * </pre>
+ * 工具类 - 提供进程名获取、Toast显示、dp转px、时间戳计算、Shell命令执行等通用工具方法
+ *
  */
+package com.raincat.dolby_beta.utils
 
-public class Tools {
+import android.app.ActivityManager
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+import com.stericson.RootShell.execution.Command
+import com.stericson.RootTools.RootTools
+import java.io.IOException
+import java.util.Calendar
+import java.util.concurrent.TimeoutException
+
+object Tools {
+
     /**
-     * 获取线程名称
+     * 获取当前进程名称
      */
-    public static String getCurrentProcessName(Context context) {
-        int pid = android.os.Process.myPid();
-        ActivityManager mActivityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-        if (mActivityManager != null) {
-            for (ActivityManager.RunningAppProcessInfo appProcess : mActivityManager.getRunningAppProcesses()) {
-                if (appProcess.pid == pid) {
-                    return appProcess.processName;
-                }
+    @JvmStatic
+    fun getCurrentProcessName(context: Context): String {
+        val pid = android.os.Process.myPid()
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        activityManager?.runningAppProcesses?.forEach { processInfo ->
+            if (processInfo.pid == pid) {
+                return processInfo.processName
             }
         }
-        return "";
+        return ""
     }
 
     /**
-     * 吐司
+     * 在主线程显示Toast
      */
-    public static void showToastOnLooper(final Context context, final String message) {
+    @JvmStatic
+    fun showToastOnLooper(context: Context, message: String) {
         try {
-            Handler handler = new Handler(Looper.getMainLooper());
-            handler.post(() -> Toast.makeText(context, message, Toast.LENGTH_LONG).show());
-        } catch (Exception e) {
-            e.printStackTrace();
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     /**
-     * dp2px
+     * dp转px
      */
-    public static int dp2px(Context context, float dpValue) {
-        final float scale = context.getResources().getDisplayMetrics().density;
-        return (int) (dpValue * scale + 0.5f);
+    @JvmStatic
+    fun dp2px(context: Context, dpValue: Float): Int {
+        val scale = context.resources.displayMetrics.density
+        return (dpValue * scale + 0.5f).toInt()
     }
 
     /**
      * 获取今天0点的时间戳
      */
-    public static long getTodayStartTime() {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(new Date());
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.SECOND, 0);
-        return calendar.getTime().getTime();
+    @JvmStatic
+    fun getTodayStartTime(): Long {
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        return calendar.time.time
     }
 
     /**
-     * ADB命令
+     * 执行ADB/Shell命令
+     * 使用RootTools获取非root shell执行命令
      */
-    public static void shell(Command command) {
+    @JvmStatic
+    fun shell(command: Command) {
         try {
-            RootTools.closeAllShells();
-            RootTools.getShell(false).add(command);
-        } catch (TimeoutException | RootDeniedException | IOException e) {
-            e.printStackTrace();
+            RootTools.closeAllShells()
+            RootTools.getShell(false).add(command)
+        } catch (e: TimeoutException) {
+            LogUtils.e("Tools.shell: 执行超时 - ${e.message}")
+            e.printStackTrace()
+        } catch (e: com.stericson.RootShell.exceptions.RootDeniedException) {
+            LogUtils.e("Tools.shell: Root权限被拒绝 - ${e.message}")
+            e.printStackTrace()
+        } catch (e: IOException) {
+            LogUtils.e("Tools.shell: IO异常 - ${e.message}")
+            e.printStackTrace()
+        } catch (e: Exception) {
+            LogUtils.e("Tools.shell: 执行异常 - ${e.javaClass.simpleName}: ${e.message}")
+            e.printStackTrace()
         }
     }
 }

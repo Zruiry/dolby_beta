@@ -1,87 +1,80 @@
-package com.raincat.dolby_beta.utils;
+/**
+ * AES-128-CBC加解密工具 - 网易云音乐参数加密
+ * 加密算法：AES/CBC/PKCS5Padding
+ * 输出格式：Base64
+ *
+ */
+package com.raincat.dolby_beta.utils
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
-public class NeteaseAES {
+object NeteaseAES {
+
+    /** 固定的第一个加密密钥 */
+    private const val FIRST_KEY = "0CoJUm6Qyw8W8jud"
+    /** 固定的第二个加密密钥（随机值占位） */
+    private const val SECOND_KEY = "FFFFFFFFFFFFFFFF"
+    /** CBC模式偏移量 */
+    private val IV_BYTES = "0102030405060708".toByteArray()
+
     /**
-     * AES 加密的具体算法为:AES-128-CBC，输出格式为 base64 AES 加密时需要指定 iv：0102030405060708
+     * AES-128-CBC加密，输出Base64
      *
-     * @param sSrc 加密后的参数值
-     * @param sKey 随机数值
+     * @param sSrc 待加密明文
+     * @param sKey 16位密钥
+     * @return Base64编码的密文，失败返回null
      */
-    public static String Encrypt(String sSrc, String sKey) throws Exception {
-        if (sKey == null) {
-            System.out.print("Key为空null");
-            return null;
-        }
-        // 判断Key是否为16位
-        if (sKey.length() != 16) {
-            System.out.print("Key长度不是16位");
-            return null;
-        }
-        byte[] raw = sKey.getBytes();
-        SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
-        // AES CBC 加密
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");// "算法/模式/补码方式"
-        // 偏移量
-        IvParameterSpec iv = new IvParameterSpec("0102030405060708".getBytes());// 使用CBC模式，需要一个向量iv，可增加加密算法的强度
-        cipher.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
-        byte[] encrypted = cipher.doFinal(sSrc.getBytes());
-
-        return NeteaseBase64.encode(encrypted);// 此处使用BASE64做转码功能，同时能起到2次加密的作用。
-    }
-
-    // 解密
-    public static String Decrypt(String sSrc, String sKey) {
-        try {
-            // 判断Key是否正确
-            if (sKey == null) {
-                System.out.print("Key为空null");
-                return null;
-            }
-            // 判断Key是否为16位
-            if (sKey.length() != 16) {
-                System.out.print("Key长度不是16位");
-                return null;
-            }
-            byte[] raw = sKey.getBytes("UTF-8");
-            SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            IvParameterSpec iv = new IvParameterSpec("0102030405060708".getBytes());
-            cipher.init(Cipher.DECRYPT_MODE, skeySpec, iv);
-            byte[] encrypted1 = NeteaseBase64.decode(sSrc);// 先用base64解密
-            try {
-                byte[] original = cipher.doFinal(encrypted1);
-                return new String(original);
-            } catch (Exception e) {
-                System.out.println(e.toString());
-                return null;
-            }
-        } catch (Exception ex) {
-            System.out.println(ex.toString());
-            return null;
-        }
-    }
-
-    public static String get_params(String text) throws Exception {
-        // 固定的参数值
-        String first_key = "0CoJUm6Qyw8W8jud";
-        // 第二个参数实际上就是一个随机值.随便写一个16位的就可以了
-        String second_key = "FFFFFFFFFFFFFFFF";
-        // AES 密钥需要随机，否则服务器会 dump 掉相同密钥的请求（数量多的话）
-        // 密钥的形式为 16 位随机字母或数字，[0-9a-zA-Z]
-        String str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        String h_encText = Encrypt(text, first_key);
-        h_encText = Encrypt(h_encText, second_key);
-        return h_encText;
+    @JvmStatic
+    fun encrypt(sSrc: String, sKey: String): String? {
+        if (sKey.length != 16) return null
+        val raw = sKey.toByteArray()
+        val skeySpec = SecretKeySpec(raw, "AES")
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, skeySpec, IvParameterSpec(IV_BYTES))
+        val encrypted = cipher.doFinal(sSrc.toByteArray())
+        return NeteaseBase64.encode(encrypted)
     }
 
     /**
-     * 这里的数其实就是相当于一个常量.因为输入的量都是固定了.所以没有必要进行修改.
+     * AES-128-CBC解密，输入Base64
+     *
+     * @param sSrc Base64编码的密文
+     * @param sKey 16位密钥
+     * @return 解密后的明文，失败返回null
      */
-    public static String get_encSecKey() {
-        return "257348aecb5e556c066de214e531faadd1c55d814f9be95fd06d6bff9f4c7a41f831f6394d5a3fd2e3881736d94a02ca919d952872e7d0a50ebfa1769a7a62d512f5f1ca21aec60bc3819a9c3ffca5eca9a0dba6d6f7249b06f5965ecfff3695b54e1c28f3f624750ed39e7de08fc8493242e26dbc4484a01c76f739e135637c";
+    @JvmStatic
+    fun decrypt(sSrc: String, sKey: String): String? {
+        if (sKey.length != 16) return null
+        val raw = sKey.toByteArray(Charsets.UTF_8)
+        val skeySpec = SecretKeySpec(raw, "AES")
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, skeySpec, IvParameterSpec(IV_BYTES))
+        val encrypted1 = NeteaseBase64.decode(sSrc) ?: return null
+        return try {
+            String(cipher.doFinal(encrypted1))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 获取加密后的params参数
+     * 两层AES加密：先用FIRST_KEY加密，再用SECOND_KEY加密
+     */
+    @JvmStatic
+    fun getParams(text: String): String? {
+        val hEncText = encrypt(text, FIRST_KEY) ?: return null
+        return encrypt(hEncText, SECOND_KEY)
+    }
+
+    /**
+     * 获取固定的encSecKey参数
+     * 由于输入参数固定，所以encSecKey也是固定值
+     */
+    @JvmStatic
+    fun getEncSecKey(): String {
+        return "257348aecb5e556c066de214e531faadd1c55d814f9be95fd06d6bff9f4c7a41f831f6394d5a3fd2e3881736d94a02ca919d952872e7d0a50ebfa1769a7a62d512f5f1ca21aec60bc3819a9c3ffca5eca9a0dba6d6f7249b06f5965ecfff3695b54e1c28f3f624750ed39e7de08fc8493242e26dbc4484a01c76f739e135637c"
     }
 }

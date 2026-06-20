@@ -1,65 +1,74 @@
-package com.raincat.dolby_beta.helper;
-
-import com.raincat.dolby_beta.utils.NeteaseAES2;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 /**
- * <pre>
- *     author : RainCat
- *     e-mail : nining377@gmail.com
- *     time   : 2021/04/16
- *     desc   : 接口处理 - 仅保留音源代理所需方法
- *     version: 2.0
- * </pre>
+ * 接口处理 - 仅保留音源代理所需方法
+ *
  */
-public class EAPIHelper {
+package com.raincat.dolby_beta.helper
+
+import com.raincat.dolby_beta.utils.NeteaseAES2
+import org.json.JSONArray
+import org.json.JSONObject
+
+object EAPIHelper {
 
     /**
      * 解除下载加密
-     * 修改fee/flag/payed等字段使歌曲显示为免费可播放，
-     * 同时保留URL中的查询参数（如vuutv签名）和所有其他原始字段。
+     * 仅修改无版权/付费歌曲的fee/flag/payed字段，使其显示为免费可播放。
+     * 原本就可以正常播放的歌曲（URL非空且code=200）不做修改，避免影响正常播放。
      *
-     * 重要：使用JSONObject直接修改字段，而不是Gson反序列化再序列化。
-     * 原因：NeteaseSongListBean.DataBean不包含响应中的所有字段
-     * （如freeTrialPrivilege、closedGain、sr、musicId等），
-     * Gson序列化会丢失这些字段，导致应用无法正常播放音乐。
+     * 判断逻辑：
+     * - URL为空或code非200 → 无版权/付费歌曲，需要修改
+     * - flag & 0x8 != 0 → 云盘歌曲，不修改
+     * - 其他 → 正常可播放歌曲，不修改
+     *
+     * @return 修改后的JSON字符串，如果无需修改则返回null
      */
-    public static String modifyPlayer(String original) {
-        try {
-            JSONObject jsonObject = new JSONObject(original);
-            JSONArray dataArray = jsonObject.getJSONArray("data");
-            for (int i = 0; i < dataArray.length(); i++) {
-                JSONObject dataObj = dataArray.getJSONObject(i);
-                // flag与8非0为云盘歌曲，云盘歌曲不修改
-                int flag = dataObj.optInt("flag", 0);
-                if ((flag & 0x8) == 0) {
-                    dataObj.put("fee", 0);
-                    dataObj.put("flag", 0);
-                    dataObj.put("payed", 0);
-                    dataObj.remove("freeTrialInfo");
+    @JvmStatic
+    fun modifyPlayer(original: String): String? {
+        return try {
+            val jsonObject = JSONObject(original)
+            val dataArray = jsonObject.getJSONArray("data")
+            var modified = false
+            for (i in 0 until dataArray.length()) {
+                val dataObj = dataArray.getJSONObject(i)
+                val flag = dataObj.optInt("flag", 0)
+                // 云盘歌曲不修改
+                if (flag and 0x8 != 0) continue
+
+                val url = dataObj.optString("url", "")
+                val code = dataObj.optInt("code", -1)
+
+                // 仅修改无版权/付费歌曲（URL为空或code非200）
+                // 原本可正常播放的歌曲不做修改
+                if (url.isNullOrEmpty() || code != 200) {
+                    dataObj.put("fee", 0)
+                    dataObj.put("flag", 0)
+                    dataObj.put("payed", 0)
+                    dataObj.remove("freeTrialInfo")
+                    modified = true
                 }
             }
-            return jsonObject.toString();
-        } catch (Exception e) {
-            return original;
+            if (modified) jsonObject.toString() else null
+        } catch (e: Exception) {
+            null
         }
     }
 
     /**
      * 解密EAPI参数
      */
-    public static JSONObject decrypt(String params) throws Exception {
-        params = NeteaseAES2.Decrypt(params);
-        if (params != null && params.length() != 0) {
-            params = params.substring(params.indexOf("{"), params.lastIndexOf("}") + 1);
-            JSONObject jsonObject = new JSONObject(params);
-            if (jsonObject.isNull("params"))
-                return new JSONObject(params);
-            else
-                return decrypt(jsonObject.getString("params"));
-        } else
-            return new JSONObject();
+    @JvmStatic
+    @Throws(Exception::class)
+    fun decrypt(params: String): JSONObject {
+        var decrypted = NeteaseAES2.decrypt(params)
+        if (!decrypted.isNullOrEmpty()) {
+            decrypted = decrypted.substring(decrypted.indexOf("{"), decrypted.lastIndexOf("}") + 1)
+            val jsonObject = JSONObject(decrypted)
+            return if (jsonObject.isNull("params")) {
+                JSONObject(decrypted)
+            } else {
+                decrypt(jsonObject.getString("params"))
+            }
+        }
+        return JSONObject()
     }
 }
