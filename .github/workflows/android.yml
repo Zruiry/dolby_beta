@@ -1,20 +1,20 @@
 # Android CI 工作流
 # 功能：自动构建 Release APK 并上传为构建产物
-# 触发条件：推送到 lite 分支、目标为 lite 的 PR、手动触发
+# 触发条件：推送到 dev 分支、目标为 dev 的 PR、手动触发
 # 前置依赖：需在 GitHub Secrets 中配置签名相关的密钥（见 Prepare signing config 步骤说明）
 # 技术栈：AGP 8.10.0 + Gradle 8.11.1 + JDK 21
 
 name: Android CI
 
 on:
-  # 推送到 lite 分支时触发
+  # 推送到 dev 分支时触发
   push:
     branches:
-      - lite
-  # 目标为 lite 的 PR 时触发
+      - dev
+  # 目标为 dev 的 PR 时触发
   pull_request:
     branches:
-      - lite
+      - dev
   # 支持在 GitHub Actions 页面手动触发
   workflow_dispatch:
 
