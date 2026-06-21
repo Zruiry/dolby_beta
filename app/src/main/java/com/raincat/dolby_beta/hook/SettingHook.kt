@@ -272,17 +272,20 @@ class SettingHook(
         val resetModuleView = com.raincat.dolby_beta.view.setting.ResetModuleView(context)
         val aboutView = com.raincat.dolby_beta.view.setting.AboutView(context)
 
-        // 依赖关系：DEX缓存、Hook警告、黑胶VIP、一起听、修复评论、隐藏升级、签到、音源代理、美化 依赖总开关
+        // 依赖关系：DEX缓存、音源代理、美化 依赖总开关
         dexView.setBaseOnView(masterView)
-        warnView.setBaseOnView(masterView)
-        blackView.setBaseOnView(masterView)
-        listenView.setBaseOnView(masterView)
-        fixCommentView.setBaseOnView(masterView)
-        updateView.setBaseOnView(masterView)
-        signView.setBaseOnView(masterView)
-        signSongDailyView.setBaseOnView(masterView)
         proxyView.setBaseOnView(masterView)
         beautyView.setBaseOnView(masterView)
+
+        // 禁用一级菜单中不需要的功能项（仅保留总开关、DEX缓存、音源代理设置、美化设置、重置模块、关于）
+        warnView.isEnabled = false
+        blackView.isEnabled = false
+        listenView.isEnabled = false
+        fixCommentView.isEnabled = false
+        updateView.isEnabled = false
+        signView.isEnabled = false
+        signSongDailyView.isEnabled = false
+        signSongSelfView.isEnabled = false
 
         dialogRoot!!.addView(TitleView(context))
         dialogRoot!!.addView(masterView)
@@ -390,16 +393,38 @@ class SettingHook(
         scrollView.addView(dialogBeautyRoot)
 
         dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyTitleView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyNightModeView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyTabHideView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyBannerHideView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyBubbleHideView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyKSongHideView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyBlackHideView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyRotationView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyCommentHotView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.PlayerBackgroundView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautySidebarHideView(context))
+        val beautyNightModeView = com.raincat.dolby_beta.view.beauty.BeautyNightModeView(context)
+        val beautyTabHideView = com.raincat.dolby_beta.view.beauty.BeautyTabHideView(context)
+        val beautyBannerHideView = com.raincat.dolby_beta.view.beauty.BeautyBannerHideView(context)
+        val beautyBubbleHideView = com.raincat.dolby_beta.view.beauty.BeautyBubbleHideView(context)
+        val beautyKSongHideView = com.raincat.dolby_beta.view.beauty.BeautyKSongHideView(context)
+        val beautyBlackHideView = com.raincat.dolby_beta.view.beauty.BeautyBlackHideView(context)
+        val beautyRotationView = com.raincat.dolby_beta.view.beauty.BeautyRotationView(context)
+        val beautyCommentHotView = com.raincat.dolby_beta.view.beauty.BeautyCommentHotView(context)
+        val playerBackgroundView = com.raincat.dolby_beta.view.beauty.PlayerBackgroundView(context)
+        val beautySidebarHideView = com.raincat.dolby_beta.view.beauty.BeautySidebarHideView(context)
+
+        // 禁用美化设置中不需要的功能项（仅保留精简Tab）
+        beautyNightModeView.isEnabled = false
+        beautyBannerHideView.isEnabled = false
+        beautyBubbleHideView.isEnabled = false
+        beautyKSongHideView.isEnabled = false
+        beautyBlackHideView.isEnabled = false
+        beautyRotationView.isEnabled = false
+        beautyCommentHotView.isEnabled = false
+        playerBackgroundView.isEnabled = false
+        beautySidebarHideView.isEnabled = false
+
+        dialogBeautyRoot!!.addView(beautyNightModeView)
+        dialogBeautyRoot!!.addView(beautyTabHideView)
+        dialogBeautyRoot!!.addView(beautyBannerHideView)
+        dialogBeautyRoot!!.addView(beautyBubbleHideView)
+        dialogBeautyRoot!!.addView(beautyKSongHideView)
+        dialogBeautyRoot!!.addView(beautyBlackHideView)
+        dialogBeautyRoot!!.addView(beautyRotationView)
+        dialogBeautyRoot!!.addView(beautyCommentHotView)
+        dialogBeautyRoot!!.addView(playerBackgroundView)
+        dialogBeautyRoot!!.addView(beautySidebarHideView)
 
         AlertDialog.Builder(context)
             .setView(scrollView)

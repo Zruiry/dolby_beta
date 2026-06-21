@@ -222,11 +222,11 @@ class SettingHelper private constructor(context: Context) {
 
         settingMap[master_key] = sharedPreferences.getBoolean(master_key, true)
         settingMap[dex_key] = sharedPreferences.getBoolean(dex_key, true)
-        settingMap[warn_key] = sharedPreferences.getBoolean(warn_key, true)
-        settingMap[black_key] = sharedPreferences.getBoolean(black_key, true)
+        settingMap[warn_key] = sharedPreferences.getBoolean(warn_key, false)
+        settingMap[black_key] = sharedPreferences.getBoolean(black_key, false)
         settingMap[listen_key] = sharedPreferences.getBoolean(listen_key, false)
         settingMap[fix_comment_key] = sharedPreferences.getBoolean(fix_comment_key, false)
-        settingMap[update_key] = sharedPreferences.getBoolean(update_key, true)
+        settingMap[update_key] = sharedPreferences.getBoolean(update_key, false)
         settingMap[sign_key] = sharedPreferences.getBoolean(sign_key, false)
         settingMap[sign_song_key] = sharedPreferences.getBoolean(sign_song_key, false)
 
