@@ -2,17 +2,25 @@
  * 根项目构建配置
  * AGP从4.0.2升级到8.10.0，以兼容Gradle 8.11.1和Java 21
  * 仓库配置：移除已废弃的jcenter，使用mavenCentral和google
+ * CI环境（GitHub Actions）直接使用官方仓库，避免阿里云镜像502问题；本地使用阿里云镜像加速
  */
 buildscript {
     // Kotlin版本（与AGP 8.10.0兼容）
     ext.kotlin_version = '1.9.25'
     repositories {
-        // 优先使用阿里云镜像，加速依赖下载
-        maven { url "https://maven.aliyun.com/repository/central" }
-        maven { url "https://maven.aliyun.com/repository/google" }
-        maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
-        google()
-        mavenCentral()
+        // 判断是否为CI环境（GitHub Actions会设置CI=true环境变量）
+        if (System.getenv('CI') == 'true') {
+            // CI环境：直接使用官方仓库，国外服务器访问更快且稳定
+            google()
+            mavenCentral()
+        } else {
+            // 本地开发：优先使用阿里云镜像加速，google镜像放前面确保Android依赖优先命中
+            maven { url "https://maven.aliyun.com/repository/google" }
+            maven { url "https://maven.aliyun.com/repository/central" }
+            maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+            google()
+            mavenCentral()
+        }
     }
     dependencies {
         // AGP升级到8.10.0，兼容Gradle 8.11.1和Java 21
@@ -24,12 +32,19 @@ buildscript {
 
 allprojects {
     repositories {
-        // 优先使用阿里云镜像，加速依赖下载
-        maven { url "https://maven.aliyun.com/repository/central" }
-        maven { url "https://maven.aliyun.com/repository/google" }
-        maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
-        google()
-        mavenCentral()
+        // 判断是否为CI环境（GitHub Actions会设置CI=true环境变量）
+        if (System.getenv('CI') == 'true') {
+            // CI环境：直接使用官方仓库，国外服务器访问更快且稳定
+            google()
+            mavenCentral()
+        } else {
+            // 本地开发：优先使用阿里云镜像加速，google镜像放前面确保Android依赖优先命中
+            maven { url "https://maven.aliyun.com/repository/google" }
+            maven { url "https://maven.aliyun.com/repository/central" }
+            maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+            google()
+            mavenCentral()
+        }
         flatDir {
             dirs 'libs'
         }

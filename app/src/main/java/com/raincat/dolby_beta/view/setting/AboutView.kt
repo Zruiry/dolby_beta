@@ -20,7 +20,7 @@ class AboutView @JvmOverloads constructor(
         setData(false, false)
 
         setOnClickListener {
-            val uri = Uri.parse("https://github.com/Zruiry/dolby_beta")
+            val uri = Uri.parse("https://github.com/nining377/dolby_beta")
             val intent = Intent(Intent.ACTION_VIEW, uri)
             context.startActivity(intent)
         }
