@@ -563,12 +563,17 @@ object ClassHelper {
     }
 
     /**
-     * 底部Tab管理类查找（完全通过特征匹配，不依赖混淆类名）
+     * 底部Tab管理类查找（完全通过特征匹配，不依赖混淆类名和方法名）
      *
-     * 特征：
+     * 通用特征：
      * 1. 实现 java.io.Serializable 接口
-     * 2. 包含返回 List 的无参 h() 方法
-     * 3. 包含 u(List):void 方法（接收 List 参数，返回 void）
+     * 2. 包含返回 List 的无参方法（获取Tab列表）
+     * 3. 包含 (List): void 方法（保存Tab列表）
+     *
+     * 经反编译源码验证，9.5.25/9.5.30/9.5.35 中 BottomTabManager 方法名一致：
+     * - 9.5.25~9.5.30: dl0.g，h() 返回 List，u(List) 返回 void
+     * - 9.5.35: dl0.h，h() 返回 List，u(List) 返回 void
+     * 但为兼容未来版本，特征匹配不依赖方法名
      *
      * 使用正则匹配混淆包名下的类（根包名1-3个小写字母+数字），通过 DEX 缓存进行特征筛选
      */
@@ -583,22 +588,23 @@ object ClassHelper {
                 val pattern = Pattern.compile("^[a-z][a-z0-9]{0,2}\\.[a-z]{1,3}$")
                 val list = getFilteredClasses(pattern, null)
                 LogUtils.i("ClassHelper: BottomTabManager 特征匹配扫描混淆包类，共 ${list.size} 个")
-                // 调试：打印前20个类名，确认 dl0.g 是否在缓存中
+                // 调试：打印前20个类名，确认 dl0.g/dl0.h 是否在缓存中
                 list.take(20).forEach { LogUtils.i("ClassHelper: BottomTabManager 候选类 - $it") }
                 clazz = Stream.of(list)
                     .map { getClassByXposed(it) }
                     .filter { it != null }
                     .map { it!! }
-                    // 特征1：实现 java.io.Serializable 接口
-                    .filter { c -> Serializable::class.java.isAssignableFrom(c) }
-                    // 特征2：包含返回 List 的无参 h() 方法
+                    // 特征1：直接实现 java.io.Serializable 接口（非继承）
+                    // BottomTabManager 直接 implements Serializable，而误匹配类如 xk.g 通过继承 MemberPushOption 间接实现
+                    .filter { c -> c.interfaces.any { it == Serializable::class.java } }
+                    // 特征2：包含返回 List 的无参方法（获取Tab列表）
                     .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                        m.name == "h" && m.parameterTypes.isEmpty() &&
+                        m.parameterTypes.isEmpty() &&
                         List::class.java.isAssignableFrom(m.returnType)
                     } }
-                    // 特征3：包含 u(List):void 方法（接收 List 参数，返回 void）
+                    // 特征3：包含 (List): void 方法（保存Tab列表）
                     .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                        m.name == "u" && m.returnType == Void::class.javaPrimitiveType &&
+                        m.returnType == Void::class.javaPrimitiveType &&
                         m.parameterTypes.size == 1 && List::class.java.isAssignableFrom(m.parameterTypes[0])
                     } }
                     .findFirst()
@@ -616,12 +622,17 @@ object ClassHelper {
     }
 
     /**
-     * Tab索引管理类查找（完全通过特征匹配，不依赖混淆类名）
+     * Tab索引管理类查找（完全通过特征匹配，不依赖混淆类名和方法名）
      *
-     * 特征：
+     * 通用特征：
      * 1. 继承 androidx.lifecycle.ViewModel
-     * 2. 包含 s4(String): int 方法
-     * 3. 包含 p4(int): String 方法
+     * 2. 包含 (String): int 方法（tabCode转position）
+     * 3. 包含 (int): String 方法（position转tabCode）
+     *
+     * 经反编译源码验证，9.5.25/9.5.30/9.5.35 中 TabIndexManager 仅有1对互逆方法：
+     * - 9.5.25~9.5.30: s4(String):int 和 p4(int):String（dl0.m）
+     * - 9.5.35: t4(String):int 和 q4(int):String（dl0.n）
+     * 该类中 (String):int 和 (int):String 方法各只有1个，特征唯一
      *
      * 使用正则匹配混淆包名下的类（根包名1-3个小写字母+数字），通过 DEX 缓存进行特征筛选
      */
@@ -642,12 +653,14 @@ object ClassHelper {
                     .filter { it != null }
                     .map { it!! }
                     .filter { c -> c.superclass == viewModelClass }
+                    // 特征2：包含 (String): int 方法（tabCode转position）
                     .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                        m.name == "s4" && m.returnType == Int::class.javaPrimitiveType &&
+                        m.returnType == Int::class.javaPrimitiveType &&
                         m.parameterTypes.size == 1 && m.parameterTypes[0] == String::class.java
                     } }
+                    // 特征3：包含 (int): String 方法（position转tabCode）
                     .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                        m.name == "p4" && m.returnType == String::class.java &&
+                        m.returnType == String::class.java &&
                         m.parameterTypes.size == 1 && m.parameterTypes[0] == Int::class.javaPrimitiveType
                     } }
                     .findFirst()

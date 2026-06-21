@@ -137,13 +137,17 @@ class BeautyHook(
                 return
             }
 
-        // 精确查找 h() 方法：无参数、返回 List
-        // 注意：dl0.g 中有多个返回 List 的无参方法（i/n/l/j/f），
-        // 必须精确匹配方法名 "h"，否则会 hook 到错误的方法
+        // 通用特征匹配：查找返回 List 的 public 无参方法（获取Tab列表）
+        // BottomTabManager 中有多个返回 List 的无参方法：
+        // - h() 是 public，返回 List<BottomTabInfoVO>（Tab信息列表，需要hook的目标）
+        // - f()/i()/l()/n() 是 private，返回 List<String>（tabCode字符串列表）
+        // 通过 public 可见性过滤，精确匹配 h()，不依赖方法名
         val hMethod = bottomNavClass.declaredMethods.firstOrNull {
-            it.name == "h" && it.parameterTypes.isEmpty()
+            java.lang.reflect.Modifier.isPublic(it.modifiers) &&
+            it.parameterTypes.isEmpty() &&
+            List::class.java.isAssignableFrom(it.returnType)
         } ?: run {
-            LogUtils.w("$TAG: hookHideTab 未找到 dl0.g.h() 方法")
+            LogUtils.w("$TAG: hookHideTab 未找到返回List的public无参方法")
             return
         }
 
@@ -173,10 +177,11 @@ class BeautyHook(
         // Hook com.netease.cloudmusic.adapter.g.createFragment - 调试Fragment创建
         hookCreateFragment()
 
-        // Hook MainActivity.Nf() - 使默认选中"我的"Tab
-        // Nc()中：if (Nf()) 选中mine(s4("mine"))，否则选中main(s4("main"))
-        // Nf()返回 !m4.u() || av.T()，正常情况下返回false，导致默认选中main（首页）
-        // hook Nf()返回true，使默认选中mine（我的）
+        // Hook MainActivity 中决定默认Tab的方法 - 使默认选中"我的"Tab
+        // Nc()中：if (Nf()/Of()) 选中mine(s4("mine"))，否则选中main(s4("main"))
+        // 9.5.25: Nc() 调用 Nf()（返回Boolean）
+        // 9.5.30: Nc() 改为调用 Of()（返回Boolean），Nf() 变为不同功能（返回boolean）
+        // hookDefaultTab 内部通过返回类型 Boolean 自动匹配正确方法
         // 注意：不需要hook s4()，因为hook dl0.g.h()过滤Tab列表后，
         // v()方法会调用u(b().h(), isForceBlackTheme)更新MainNavigationState，
         // s4()和p4()都基于已过滤的MainNavigationState.e()返回正确值
@@ -231,13 +236,15 @@ class BeautyHook(
                     // 通过反射获取 mine 的索引
                     val mClass = com.raincat.dolby_beta.helper.ClassHelper.TabIndexManager.getClazz(context)
                     if (mClass != null) {
-                        val s4Method = mClass.declaredMethods.firstOrNull {
-                            it.name == "s4" && it.parameterTypes.size == 1 &&
-                                it.parameterTypes[0] == String::class.java
+                        // 通用特征匹配：查找 (s4|t4)(String): int 方法（tabCode转position）
+                        val tabIndexMethod = mClass.declaredMethods.firstOrNull {
+                            it.parameterTypes.size == 1 &&
+                                it.parameterTypes[0] == String::class.java &&
+                                it.returnType == Int::class.javaPrimitiveType
                         }
-                        if (s4Method != null) {
-                            s4Method.isAccessible = true
-                            mineIndex = s4Method.invoke(null, "mine") as? Int ?: -1
+                        if (tabIndexMethod != null) {
+                            tabIndexMethod.isAccessible = true
+                            mineIndex = tabIndexMethod.invoke(null, "mine") as? Int ?: -1
                             // mineIndex >= 0 表示当前是 MainActivity 场景（Tab已过滤）
                             if (mineIndex >= 0) {
                                 // 在 setAdapter 执行前设置 mPendingCurrentItem
@@ -298,26 +305,37 @@ class BeautyHook(
     }
 
     /**
-     * Hook MainActivity.Nf() - 返回true使默认选中"我的"Tab
+     * Hook MainActivity 中决定默认Tab的方法 - 返回true使默认选中"我的"Tab
      *
-     * MainActivity.Nc() 逻辑：
+     * 默认Tab选择逻辑（以9.5.25为例，其他版本方法名不同但逻辑一致）：
      *   if (intent.getIntExtra("SELECT_PAGE_INDEX", -1) == -1) {
-     *       if (Nf().booleanValue()) {
-     *           intent.putExtra("SELECT_PAGE_INDEX", dl0.m.s4("mine"));  // 选中我的
+     *       if (决定默认Tab的方法().booleanValue()) {
+     *           intent.putExtra("SELECT_PAGE_INDEX", s4/t4("mine"));  // 选中我的
      *       } else {
-     *           intent.putExtra("SELECT_PAGE_INDEX", dl0.m.s4("main"));  // 选中首页
+     *           intent.putExtra("SELECT_PAGE_INDEX", s4/t4("main"));  // 选中首页
      *       }
      *   }
-     *   Mc(intent);
+     *   Mc/Oc(intent);
      *
-     * Mc(Intent) 逻辑：
-     *   int intExtra = wd() ? 0 : intent.getIntExtra("SELECT_PAGE_INDEX", -1);
+     * 版本差异（混淆方法名变化）：
+     * - 9.5.25: Nf() 返回 Boolean，逻辑为 !m4.u() || av.T()
+     * - 9.5.30: Of() 返回 Boolean，逻辑为 !l4.u() || av.T()
+     * - 9.5.35: Rf() 返回 Boolean，逻辑为 !l4.u() || bv.T()
+     *
+     * 通用特征匹配方案：查找 MainActivity 中返回 java.lang.Boolean（包装类型）的无参方法。
+     * 经反编译源码验证，9.5.25/9.5.30/9.5.35 中 MainActivity 仅有1个返回 Boolean 的无参方法，
+     * 即决定默认Tab的方法。通过返回类型 Boolean（包装类型，非基本类型 boolean）自动区分：
+     * - 9.5.25 的 Nf() 返回 Boolean → 匹配
+     * - 9.5.30 的 Of() 返回 Boolean → 匹配；Nf() 返回 boolean → 不匹配
+     * - 9.5.35 的 Rf() 返回 Boolean → 匹配
+     *
+     * Mc/Oc(Intent) 逻辑：
+     *   int intExtra = wd()/yd() ? 0 : intent.getIntExtra("SELECT_PAGE_INDEX", -1);
      *   if (intExtra < this.mPagerAdapter.getLength() && intExtra >= 0) {
      *       setCurrentPage(intExtra, false);  // 设置ViewPager2的position
      *   }
      *
-     * 方案：hook Nf()返回true，使Nc()中SELECT_PAGE_INDEX=s4("mine")=0（过滤后索引）
-     * 这样Mc方法正常执行，不会干扰子页面逻辑（SELECT_SUB_PAGE_INDEX等）
+     * 方案：hook 目标方法返回true，使默认Tab选择方法中SELECT_PAGE_INDEX=s4/t4("mine")=0（过滤后索引）
      */
     private fun hookDefaultTab() {
         val mainActivityClass = findClassIfExists(
@@ -327,20 +345,25 @@ class BeautyHook(
             return
         }
 
-        val nfMethod = mainActivityClass.declaredMethods.firstOrNull {
-            it.name == "Nf" && it.parameterTypes.isEmpty()
+        // 通用特征匹配：查找返回 java.lang.Boolean（包装类型）的无参方法
+        // 经反编译源码验证，MainActivity 中仅有1个此特征的方法，即决定默认Tab的方法
+        // 注意：必须区分 Boolean（包装类型）和 boolean（基本类型），后者是其他功能方法
+        val targetMethod = mainActivityClass.declaredMethods.firstOrNull {
+            it.parameterTypes.isEmpty() &&
+            it.returnType == java.lang.Boolean::class.java
         } ?: run {
-            LogUtils.w("$TAG: hookDefaultTab 未找到 Nf() 方法")
+            LogUtils.w("$TAG: hookDefaultTab 未找到返回Boolean的无参方法")
             return
         }
 
-        module.hook(nfMethod).intercept(object : XposedInterface.Hooker {
+        val methodName = targetMethod.name
+        module.hook(targetMethod).intercept(object : XposedInterface.Hooker {
             override fun intercept(chain: XposedInterface.Chain): Any? {
-                LogUtils.i("$TAG: hookDefaultTab Nf() -> true")
+                LogUtils.i("$TAG: hookDefaultTab $methodName() -> true")
                 return true
             }
         })
-        LogUtils.i("$TAG: hookDefaultTab 成功")
+        LogUtils.i("$TAG: hookDefaultTab 成功，hook 方法: $methodName")
     }
 
     /**
@@ -369,9 +392,14 @@ class BeautyHook(
                 // 获取tabCode，确认position对应的Tab
                 val tabCode = try {
                     val mClass = com.raincat.dolby_beta.helper.ClassHelper.TabIndexManager.getClazz(context)
-                    val p4Method = mClass?.declaredMethods?.firstOrNull { it.name == "p4" }
-                    p4Method?.isAccessible = true
-                    p4Method?.invoke(null, position) as? String
+                    // 通用特征匹配：查找 (p4|q4)(int): String 方法（position转tabCode）
+                    val tabCodeMethod = mClass?.declaredMethods?.firstOrNull {
+                        it.parameterTypes.size == 1 &&
+                            it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                            it.returnType == String::class.java
+                    }
+                    tabCodeMethod?.isAccessible = true
+                    tabCodeMethod?.invoke(null, position) as? String
                 } catch (e: Throwable) {
                     "error: ${e.message}"
                 }
