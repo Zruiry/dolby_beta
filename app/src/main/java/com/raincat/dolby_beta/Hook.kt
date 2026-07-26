@@ -19,23 +19,11 @@ import android.os.Build
 import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.helper.ExtraHelper
 import com.raincat.dolby_beta.helper.SettingHelper
-import com.raincat.dolby_beta.hook.AdAndUpdateHook
-import com.raincat.dolby_beta.hook.AdExtraHook
-import com.raincat.dolby_beta.hook.AutoSignInHook
 import com.raincat.dolby_beta.hook.BeautyHook
-import com.raincat.dolby_beta.hook.BlackHook
 import com.raincat.dolby_beta.hook.CdnHook
-import com.raincat.dolby_beta.hook.DownloadMD5Hook
 import com.raincat.dolby_beta.hook.EAPIHook
-import com.raincat.dolby_beta.hook.GrayHook
-import com.raincat.dolby_beta.hook.HideSidebarHook
-import com.raincat.dolby_beta.hook.InternalDialogHook
-import com.raincat.dolby_beta.hook.ListentogetherHook
-import com.raincat.dolby_beta.hook.LoginFixHook
-import com.raincat.dolby_beta.hook.MagiskFixHook
 import com.raincat.dolby_beta.hook.ProxyHook
 import com.raincat.dolby_beta.hook.SettingHook
-import com.raincat.dolby_beta.hook.UserProfileHook
 import com.raincat.dolby_beta.utils.LogUtils
 import com.raincat.dolby_beta.utils.Tools
 import io.github.libxposed.api.XposedModule
@@ -76,7 +64,7 @@ class Hook(
     /**
      * 主进程初始化
      * - attachBaseContext阶段：ProxyHook + 脚本启动 + SongPrivilege（最早时机，cronet还未添加）
-     * - onCreate阶段：SettingHook + EAPIHook + CdnHook + 美化/黑胶/签到等Hook（需要Application完全初始化）
+     * - onCreate阶段：SettingHook + EAPIHook + CdnHook + 美化Hook（需要Application完全初始化）
      */
     private fun initMainProcess(module: XposedModule, context: Context, versionCode: Int, isEarly: Boolean) {
         if (isEarly) {
@@ -110,37 +98,11 @@ class Hook(
     }
 
     /**
-     * 初始化功能Hook（美化、黑胶VIP、签到、广告、一起听、侧边栏等）
-     * 这些Hook不依赖dex扫描结果，使用非混淆类名
+     * 初始化功能Hook（仅美化功能）
      */
     private fun initFeatureHooks(module: XposedModule, context: Context, versionCode: Int) {
         try {
-            // 用户资料获取（获取用户ID、Cookie、喜欢的歌单ID，签到功能依赖）
-            UserProfileHook(module, context)
-            // 登录修复（填充checkToken）
-            LoginFixHook(module, context)
-            // Magisk修复（外置SD卡读写）
-            MagiskFixHook(module, context)
-            // 内测与听歌识别弹窗拦截
-            InternalDialogHook(module, context, versionCode)
-            // 下载MD5修复
-            DownloadMD5Hook(module, context)
-            // 广告移除增强
-            AdExtraHook(module, context)
-            // 黑胶VIP
-            BlackHook(module, context, versionCode)
-            // 一起听解锁
-            ListentogetherHook(module, context, versionCode)
-            // 自动签到
-            AutoSignInHook(module, context, versionCode)
-            // 去广告和升级提示
-            AdAndUpdateHook(module, context, versionCode)
-            // 美化设置（夜间模式、精简Tab、隐藏Banner、隐藏小红点、黑胶停转、评论区最热、播放界面背景、黑胶隐藏、音谱移除）
             BeautyHook(module, context, versionCode)
-            // 侧边栏精简
-            HideSidebarHook(module, context, versionCode)
-            // 不变灰（Hook MusicInfo.hasCopyRight 返回 true）
-            GrayHook(module, context)
             LogUtils.i("Hook: 功能Hook初始化完成")
         } catch (e: Throwable) {
             LogUtils.e("Hook: 功能Hook初始化失败 - ${e.message}")

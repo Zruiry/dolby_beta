@@ -27,7 +27,7 @@ android {
         // AGP 8.x新语法：targetSdk替代targetSdkVersion
         targetSdk 34
         versionCode 354
-        versionName "3.5.4.zr2"
+        versionName "3.5.4.zr3"
 
         ndk {
             abiFilters "arm64-v8a"

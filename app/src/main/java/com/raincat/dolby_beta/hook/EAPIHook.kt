@@ -290,10 +290,8 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                         throw t
                     }
 
-                    // 代理和黑胶都未开启则直接返回，不消费body
-                    if (!SettingHelper.getInstance().isEnable(SettingHelper.black_key)
-                        && !SettingHelper.getInstance().isEnable(SettingHelper.proxy_master_key)
-                    ) return result
+                    // 代理未开启则直接返回，不消费body
+                    if (!SettingHelper.getInstance().isEnable(SettingHelper.proxy_master_key)) return result
 
                     if (result == null) return result
 
@@ -302,7 +300,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                         return result
 
                     // 关键优化：只对需要处理的路径消费body，其他EAPI请求直接放行
-                    // 参考dev分支：仅处理song/enhance/player/url、song/enhance/download/url、batch
+                    // 处理音源替换API、批量请求API
                     val needProcess = urlPath.contains("song/enhance/player/url")
                             || urlPath.contains("song/enhance/download/url")
                             || urlPath.contains("batch")
@@ -468,9 +466,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
         module.hook(resultMethod).intercept(object : XposedInterface.Hooker {
             override fun intercept(chain: XposedInterface.Chain): Any? {
                 val result = chain.proceed()
-                if (!SettingHelper.getInstance().isEnable(SettingHelper.black_key)
-                    && !SettingHelper.getInstance().isEnable(SettingHelper.proxy_master_key)
-                ) return result
+                if (!SettingHelper.getInstance().isEnable(SettingHelper.proxy_master_key)) return result
                 if (result !is String && result !is JSONObject) return result
                 val original = result.toString()
                 if (TextUtils.isEmpty(original)) return result
@@ -508,18 +504,14 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
 
         if (path.contains("song/enhance/player/url")) {
             val modified = EAPIHelper.modifyPlayer(original)
-            if (modified != null) {
-                if (proxyActive) {
-                    return replaceEmptyUrlWithProxy(context, modified, paramsMap, path)
-                }
-                return modified
-            }
-            // 响应数据为空时（如cronet异常导致请求失败），通过代理获取替换音源
-            // 参考dev分支：看返回的歌曲是不是空，决定是不是需要替换
+            // 代理开启时，始终尝试通过代理替换音源
+            // - 无版权歌曲（URL为空/code非200）：modifyPlayer返回modified，代理替换URL
+            // - VIP歌曲（fee>0，有试听URL）：modifyPlayer对VIP也返回modified（fee改为0），但仍需通过代理获取完整播放URL
+            // - 响应数据为空（如cronet异常）：通过代理获取全部替换音源
             if (proxyActive) {
-                return replaceEmptyUrlWithProxy(context, original, paramsMap, path)
+                return replaceEmptyUrlWithProxy(context, modified ?: original, paramsMap, path)
             }
-            return null
+            return modified ?: null
         } else if (path.contains("song/enhance/download/url")) {
             val jsonObject = JSONObject(original)
             val obj = jsonObject.getJSONObject("data")
@@ -552,16 +544,19 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             val responseJson = JSONObject(modified)
             val dataArray = responseJson.optJSONArray("data") ?: return modified
 
-            // 收集URL为空的歌曲ID
+            // 收集需要通过代理替换音源的歌曲ID
+            // 参考master分支：对所有非云盘歌曲都尝试通过代理获取替换音源
+            // - 无版权歌曲：URL为空或code非200
+            // - VIP歌曲：URL非空但fee>0（仅有试听URL，无完整播放权限）。fee经modifyPlayer处理后已置0，但URL仍为试听URL
+            // 对所有非云盘歌曲统一收集，代理服务器会正确处理（正常歌曲不改动，VIP/无版权替换URL）
             val emptyUrlIds = mutableListOf<String>()
             for (i in 0 until dataArray.length()) {
                 val songObj = dataArray.optJSONObject(i) ?: continue
-                val url = songObj.optString("url", "")
-                val code = songObj.optInt("code", -1)
-                if (TextUtils.isEmpty(url) || code != 200) {
-                    val songId = songObj.optLong("id", -1)
-                    if (songId > 0) emptyUrlIds.add("${songId}_0")
-                }
+                val flag = songObj.optInt("flag", 0)
+                // 云盘歌曲跳过
+                if (flag and 0x8 != 0) continue
+                val songId = songObj.optLong("id", -1)
+                if (songId > 0) emptyUrlIds.add("${songId}_0")
             }
 
             // 响应数据为空时（如cronet异常），从请求参数中提取歌曲ID
@@ -632,6 +627,11 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                     if (songObj.optLong("id") == proxySongId) {
                         songObj.put("url", proxyUrl)
                         songObj.put("code", 200)
+                        // 设置fee/flag/payed为0，确保VIP歌曲显示为免费可播放（参考master分支）
+                        songObj.put("fee", 0)
+                        songObj.put("flag", 0)
+                        songObj.put("payed", 0)
+                        songObj.remove("freeTrialInfo")
                         if (proxySong.has("br")) songObj.put("br", proxySong.optInt("br"))
                         if (proxySong.has("size")) songObj.put("size", proxySong.optInt("size"))
                         if (proxySong.has("md5")) songObj.put("md5", proxySong.optString("md5"))
@@ -844,30 +844,6 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                 jsonObject.put("/api/v1/content/exposure/comment/banner/get", obj)
             }
             return jsonObject.toString()
-        } else if (SettingHelper.getInstance().isEnable(SettingHelper.fix_comment_key)
-            && original.contains("\\/api\\/resource\\/comment\\/musiciansaid\\/authors")
-        ) {
-            val jsonObject = JSONObject(original)
-            val obj = jsonObject.getJSONObject("/api/resource/comment/musiciansaid/authors")
-            val data = obj.getJSONObject("data")
-            val team = data.getJSONArray("team")
-            for (i in 0 until team.length()) {
-                val o = team.getJSONObject(i)
-                val s = o.optString("authorTypeText")
-                if (s == "作者") {
-                    var uid = o.optLong("uid")
-                    val artistId = o.optLong("artistId")
-                    if (uid > Int.MAX_VALUE.toLong()) {
-                        val artistJSONObject = jsonObject.getJSONObject("/api/auth/artist")
-                        val authJSONObject = artistJSONObject.getJSONObject("auth")
-                        while (uid > Int.MAX_VALUE.toLong()) uid /= 10
-                        authJSONObject.put(artistId.toString(), uid)
-                        artistJSONObject.put("auth", authJSONObject)
-                        jsonObject.put("/api/auth/artist", artistJSONObject)
-                        return jsonObject.toString()
-                    }
-                }
-            }
         }
         return null
     }

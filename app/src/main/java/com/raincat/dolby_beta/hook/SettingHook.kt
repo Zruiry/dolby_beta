@@ -70,7 +70,6 @@ class SettingHook(
     private var dialogProxyRoot: LinearLayout? = null
     private var dialogScriptRoot: LinearLayout? = null
     private var dialogBeautyRoot: LinearLayout? = null
-    private var dialogSidebarRoot: LinearLayout? = null
     /** 脚本启动命令显示TextView引用（用于refresh时更新） */
     private var scriptCommandText: TextView? = null
     private var broadcastReceiver: BroadcastReceiver? = null
@@ -256,17 +255,9 @@ class SettingHook(
             scrollView.isVerticalScrollBarEnabled = false
             scrollView.addView(dialogRoot)
 
-        // 主设置页面布局（与dev分支一致）：总开关 → DEX缓存 → Hook警告 → 黑胶VIP → 一起听 → 修复评论 → 隐藏升级 → 签到 → 每日打卡 → 自助打卡 → 音源代理 → 美化 → 重置 → 关于
+        // 主设置页面布局：总开关 → DEX缓存 → 音源代理 → 美化 → 重置 → 关于
         val masterView = com.raincat.dolby_beta.view.setting.MasterView(context)
         val dexView = com.raincat.dolby_beta.view.setting.DexView(context)
-        val warnView = com.raincat.dolby_beta.view.setting.WarnView(context)
-        val blackView = com.raincat.dolby_beta.view.setting.BlackView(context)
-        val listenView = com.raincat.dolby_beta.view.setting.ListenView(context)
-        val fixCommentView = com.raincat.dolby_beta.view.setting.FixCommentView(context)
-        val updateView = com.raincat.dolby_beta.view.setting.UpdateView(context)
-        val signView = com.raincat.dolby_beta.view.setting.SignView(context)
-        val signSongDailyView = com.raincat.dolby_beta.view.setting.SignSongDailyView(context)
-        val signSongSelfView = com.raincat.dolby_beta.view.setting.SignSongSelfView(context)
         val proxyView = com.raincat.dolby_beta.view.setting.ProxyView(context)
         val beautyView = com.raincat.dolby_beta.view.setting.BeautyView(context)
         val resetModuleView = com.raincat.dolby_beta.view.setting.ResetModuleView(context)
@@ -277,27 +268,9 @@ class SettingHook(
         proxyView.setBaseOnView(masterView)
         beautyView.setBaseOnView(masterView)
 
-        // 禁用一级菜单中不需要的功能项（仅保留总开关、DEX缓存、音源代理设置、美化设置、重置模块、关于）
-        warnView.isEnabled = false
-        blackView.isEnabled = false
-        listenView.isEnabled = false
-        fixCommentView.isEnabled = false
-        updateView.isEnabled = false
-        signView.isEnabled = false
-        signSongDailyView.isEnabled = false
-        signSongSelfView.isEnabled = false
-
         dialogRoot!!.addView(TitleView(context))
         dialogRoot!!.addView(masterView)
         dialogRoot!!.addView(dexView)
-        dialogRoot!!.addView(warnView)
-        dialogRoot!!.addView(blackView)
-        dialogRoot!!.addView(listenView)
-        dialogRoot!!.addView(fixCommentView)
-        dialogRoot!!.addView(updateView)
-        dialogRoot!!.addView(signView)
-        dialogRoot!!.addView(signSongDailyView)
-        dialogRoot!!.addView(signSongSelfView)
         dialogRoot!!.addView(proxyView)
         dialogRoot!!.addView(beautyView)
         dialogRoot!!.addView(resetModuleView)
@@ -393,91 +366,15 @@ class SettingHook(
         scrollView.addView(dialogBeautyRoot)
 
         dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyTitleView(context))
-        val beautyNightModeView = com.raincat.dolby_beta.view.beauty.BeautyNightModeView(context)
         val beautyTabHideView = com.raincat.dolby_beta.view.beauty.BeautyTabHideView(context)
-        val beautyBannerHideView = com.raincat.dolby_beta.view.beauty.BeautyBannerHideView(context)
-        val beautyBubbleHideView = com.raincat.dolby_beta.view.beauty.BeautyBubbleHideView(context)
-        val beautyKSongHideView = com.raincat.dolby_beta.view.beauty.BeautyKSongHideView(context)
-        val beautyBlackHideView = com.raincat.dolby_beta.view.beauty.BeautyBlackHideView(context)
-        val beautyRotationView = com.raincat.dolby_beta.view.beauty.BeautyRotationView(context)
-        val beautyCommentHotView = com.raincat.dolby_beta.view.beauty.BeautyCommentHotView(context)
-        val playerBackgroundView = com.raincat.dolby_beta.view.beauty.PlayerBackgroundView(context)
-        val beautySidebarHideView = com.raincat.dolby_beta.view.beauty.BeautySidebarHideView(context)
 
-        // 禁用美化设置中不需要的功能项（仅保留精简Tab）
-        beautyNightModeView.isEnabled = false
-        beautyBannerHideView.isEnabled = false
-        beautyBubbleHideView.isEnabled = false
-        beautyKSongHideView.isEnabled = false
-        beautyBlackHideView.isEnabled = false
-        beautyRotationView.isEnabled = false
-        beautyCommentHotView.isEnabled = false
-        playerBackgroundView.isEnabled = false
-        beautySidebarHideView.isEnabled = false
-
-        dialogBeautyRoot!!.addView(beautyNightModeView)
         dialogBeautyRoot!!.addView(beautyTabHideView)
-        dialogBeautyRoot!!.addView(beautyBannerHideView)
-        dialogBeautyRoot!!.addView(beautyBubbleHideView)
-        dialogBeautyRoot!!.addView(beautyKSongHideView)
-        dialogBeautyRoot!!.addView(beautyBlackHideView)
-        dialogBeautyRoot!!.addView(beautyRotationView)
-        dialogBeautyRoot!!.addView(beautyCommentHotView)
-        dialogBeautyRoot!!.addView(playerBackgroundView)
-        dialogBeautyRoot!!.addView(beautySidebarHideView)
 
         AlertDialog.Builder(context)
             .setView(scrollView)
             .setCancelable(true)
             .setPositiveButton("仅保存") { _, _ -> }
             .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    /**
-     * 显示播放界面背景设置对话框
-     */
-    private fun showPlayerBackgroundDialog(context: Context) {
-        dialogBeautyRoot = BaseDialogItem(context)
-        dialogBeautyRoot!!.orientation = LinearLayout.VERTICAL
-
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.background.BackgroundTitleView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.background.BackgroundMasterView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.background.BackgroundPictureUrlView(context))
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.background.BackgroundBlurRadiusView(context))
-
-        AlertDialog.Builder(context)
-            .setView(dialogBeautyRoot)
-            .setCancelable(true)
-            .setPositiveButton("仅保存") { _, _ -> }
-            .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    /**
-     * 显示侧边栏精简设置对话框
-     * 动态加载当前版本网易云侧边栏的所有Item
-     */
-    private fun showSidebarDialog(context: Context) {
-        dialogSidebarRoot = BaseDialogItem(context)
-        dialogSidebarRoot!!.orientation = LinearLayout.VERTICAL
-        val scrollView = ScrollView(context)
-        scrollView.overScrollMode = ScrollView.OVER_SCROLL_NEVER
-        scrollView.isVerticalScrollBarEnabled = false
-        scrollView.addView(dialogSidebarRoot)
-
-        val sidebarMap = com.raincat.dolby_beta.model.SidebarEnum.getSidebarEnum()
-        val sidebarSettingMap = SettingHelper.getInstance().getSidebarSetting(sidebarMap)
-        for (key in sidebarMap.keys) {
-            val item = com.raincat.dolby_beta.view.beauty.BeautySidebarHideItem(context)
-            item.initData(sidebarMap, sidebarSettingMap, key)
-            dialogSidebarRoot!!.addView(item)
-        }
-
-        AlertDialog.Builder(context)
-            .setView(scrollView)
-            .setCancelable(true)
-            .setPositiveButton("确定") { _, _ -> }
             .show()
     }
 
@@ -541,8 +438,6 @@ class SettingHook(
         intentFilter.addAction(SettingHelper.refresh_setting)
         intentFilter.addAction(SettingHelper.proxy_setting)
         intentFilter.addAction(SettingHelper.beauty_setting)
-        intentFilter.addAction(SettingHelper.sidebar_setting)
-        intentFilter.addAction(SettingHelper.background_setting)
         intentFilter.addAction(SettingHelper.proxy_configuration_setting)
         intentFilter.addAction(SettingHelper.script_configuration_setting)
         broadcastReceiver = object : BroadcastReceiver() {
@@ -576,15 +471,9 @@ class SettingHook(
                                 (root.getChildAt(i) as? BaseDialogItem)?.refresh()
                             }
                         }
-                        dialogSidebarRoot?.let { root ->
-                            for (i in 0 until root.childCount) {
-                                (root.getChildAt(i) as? BaseDialogItem)?.refresh()
-                            }
-                        }
                         return
                     }
                     // 广播接收器的Context是Application Context，AlertDialog需要Activity Context才能显示窗口
-                    // 否则抛BadTokenException: Unable to add window -- token null is not valid
                     val activityContext = currentActivity
                     if (activityContext == null) {
                         LogUtils.w("SettingHook: 无法获取Activity Context，跳过对话框显示 action=$action")
@@ -593,8 +482,6 @@ class SettingHook(
                     when (action) {
                         SettingHelper.proxy_setting -> showProxyDialog(activityContext)
                         SettingHelper.beauty_setting -> showBeautyDialog(activityContext)
-                        SettingHelper.sidebar_setting -> showSidebarDialog(activityContext)
-                        SettingHelper.background_setting -> showPlayerBackgroundDialog(activityContext)
                         SettingHelper.proxy_configuration_setting -> showProxyConfigurationDialog(activityContext)
                         SettingHelper.script_configuration_setting -> showScriptConfigurationDialog(activityContext)
                     }

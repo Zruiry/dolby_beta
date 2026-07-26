@@ -1,29 +1,16 @@
 /**
- * 美化Hook集合 - 包含所有美化相关的Hook
+ * 美化Hook集合 - 精简Tab功能
  *
  * 功能：
- * 1. 跟随系统夜间模式（NightMode）
- * 2. 精简Tab（HideTab）
- * 3. 移除Banner（HideBanner）
- * 4. 移除小红点（HideBubble）
- * 5. 黑胶停转（RotationStop）
- * 6. 评论区优先最热（CommentHot）
- * 7. 自定义播放界面背景（PlayerBackground）
- *
- * 适配高版本网易云：使用非混淆类名
+ * 1. 精简Tab（HideTab）- 仅保留"我的"与"首页"
  */
 package com.raincat.dolby_beta.hook
 
 import android.content.Context
-import android.content.Intent
-import android.content.res.Configuration
-import android.util.Pair
-import android.view.View
 import com.raincat.dolby_beta.helper.SettingHelper
 import com.raincat.dolby_beta.utils.LogUtils
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import org.json.JSONArray
 
 class BeautyHook(
     private val module: XposedModule,
@@ -36,81 +23,13 @@ class BeautyHook(
 
     init {
         try {
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_night_mode_key)) {
-                hookNightMode()
-            }
             if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_tab_hide_key)) {
                 hookHideTab()
-            }
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_banner_hide_key)) {
-                hookHideBanner()
-            }
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_bubble_hide_key)) {
-                hookHideBubble()
-            }
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_rotation_key)) {
-                hookRotationStop()
-            }
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_comment_hot_key)) {
-                hookCommentHot()
-            }
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_background_key)) {
-                hookPlayerBackground()
-            }
-            // 播放页黑胶隐藏和音谱移除（两者都在PlayerActivity.onCreate中处理）
-            if (SettingHelper.getInstance().getSetting(SettingHelper.beauty_black_hide_key) ||
-                SettingHelper.getInstance().getSetting(SettingHelper.beauty_ksong_hide_key)) {
-                hookPlayerActivity()
             }
             LogUtils.i("$TAG: 初始化完成")
         } catch (e: Throwable) {
             LogUtils.e("$TAG: 初始化失败 - ${e.message}")
         }
-    }
-
-    // ==================== 夜间模式 ====================
-
-    /**
-     * Hook MainActivity.onStart - 跟随系统深色模式切换夜间/日间模式
-     */
-    private fun hookNightMode() {
-        val superActivityClass = findClassIfExists("com.netease.cloudmusic.activity.MainActivity", context.classLoader) ?: return
-        val onStartMethod = findMethodIfExists(superActivityClass, "onStart") ?: return
-
-        val resourceRouterClass = findClassIfExists("com.netease.cloudmusic.theme.core.ResourceRouter", context.classLoader) ?: return
-        val themeAgentClass = findClassIfExists("com.netease.cloudmusic.theme.core.ThemeAgent", context.classLoader) ?: return
-        val themeConfigClass = findClassIfExists("com.netease.cloudmusic.theme.core.ThemeConfig", context.classLoader) ?: return
-        val themeInfoClass = findClassIfExists("com.netease.cloudmusic.theme.core.ThemeInfo", context.classLoader) ?: return
-
-        module.hook(onStartMethod).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                val result = chain.proceed()
-                try {
-                    val c = chain.thisObject as Context
-                    val resourceRouter = resourceRouterClass.getDeclaredMethod("getInstance").invoke(null)
-                    val isNight = resourceRouterClass.getDeclaredMethod("isNightTheme").invoke(resourceRouter) as Boolean
-                    val nightModeFlags = c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-                    if (nightModeFlags == Configuration.UI_MODE_NIGHT_YES && !isNight) {
-                        // 切换到夜间模式
-                        val themeAgent = themeAgentClass.getDeclaredMethod("getInstance").invoke(null)
-                        val themeInfo = themeInfoClass.getDeclaredConstructor(Integer.TYPE).newInstance(-3)
-                        themeAgentClass.getDeclaredMethod("switchTheme", Context::class.java, themeInfoClass, java.lang.Boolean.TYPE)
-                            .invoke(themeAgent, c, themeInfo, true)
-                    } else if (nightModeFlags == Configuration.UI_MODE_NIGHT_NO && isNight) {
-                        // 切换回日间模式
-                        val themeAgent = themeAgentClass.getDeclaredMethod("getInstance").invoke(null)
-                        val prevThemeInfo = themeConfigClass.getDeclaredMethod("getPrevThemeInfo").invoke(null) as Pair<Int, Boolean>
-                        val themeInfo = themeInfoClass.getDeclaredConstructor(Integer.TYPE).newInstance(prevThemeInfo.first)
-                        themeAgentClass.getDeclaredMethod("switchTheme", Context::class.java, themeInfoClass, java.lang.Boolean.TYPE)
-                            .invoke(themeAgent, c, themeInfo, true)
-                    }
-                } catch (e: Throwable) {
-                    LogUtils.e("$TAG: hookNightMode 异常 - ${e.message}")
-                }
-                return result
-            }
-        })
-        LogUtils.i("$TAG: hookNightMode 成功")
     }
 
     // ==================== 精简Tab ====================
@@ -465,232 +384,6 @@ class BeautyHook(
             }
         })
         LogUtils.i("$TAG: hookViewPager2SetCurrentItem 成功")
-    }
-
-    // ==================== 移除Banner ====================
-
-    /**
-     * Hook MainBannerContainer.onAttachedToWindow - 隐藏Banner
-     */
-    private fun hookHideBanner() {
-        val bannerClass = findClassIfExists("com.netease.cloudmusic.ui.MainBannerContainer", context.classLoader) ?: return
-        val method = findMethodIfExists(bannerClass, "onAttachedToWindow") ?: return
-
-        module.hook(method).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                val view = chain.thisObject as View
-                val layoutParams = view.layoutParams
-                layoutParams.height = 1 // 改成0将导致无法下滑刷新
-                view.layoutParams = layoutParams
-                view.visibility = View.GONE
-                return chain.proceed()
-            }
-        })
-        LogUtils.i("$TAG: hookHideBanner 成功")
-    }
-
-    // ==================== 移除小红点 ====================
-
-    /**
-     * Hook View.setVisibility - 隐藏消息小红点
-     */
-    private fun hookHideBubble() {
-        val bubbleClass = findClassIfExists("com.netease.cloudmusic.ui.MessageBubbleView", context.classLoader)
-            ?: findClassIfExists("com.netease.cloudmusic.theme.ui.MessageBubbleView", context.classLoader)
-            ?: return
-        val viewClass = findClassIfExists("android.view.View", context.classLoader) ?: return
-        val method = findMethodIfExists(viewClass, "setVisibility", Integer.TYPE) ?: return
-
-        module.hook(method).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                val thisObject = chain.thisObject
-                // 仅对消息小红点View生效，其他View正常执行
-                if (thisObject.javaClass == bubbleClass) {
-                    return chain.proceed(arrayOf(View.GONE))
-                }
-                return chain.proceed()
-            }
-        })
-        LogUtils.i("$TAG: hookHideBubble 成功")
-    }
-
-    // ==================== 黑胶停转 ====================
-
-    /**
-     * Hook RotationRelativeLayout$AnimationHolder.prepareAnimation - 阻止黑胶转动动画
-     *
-     * AnimationHolder 和 prepareAnimation() 在各版本中均为明文，无需混淆名回退
-     */
-    private fun hookRotationStop() {
-        val clazz = findClassIfExists(
-            "com.netease.cloudmusic.ui.RotationRelativeLayout\$AnimationHolder", context.classLoader
-        ) ?: return
-        val method = findMethodIfExists(clazz, "prepareAnimation") ?: return
-
-        module.hook(method).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? = null
-        })
-        LogUtils.i("$TAG: hookRotationStop 成功")
-    }
-
-    // ==================== 评论区优先最热 ====================
-
-    /**
-     * Hook SortTypeList.parseList - 调整评论排序顺序，优先显示"最热"
-     */
-    private fun hookCommentHot() {
-        val sortTypeListClass = findClassIfExists("com.netease.cloudmusic.module.comment2.meta.SortTypeList", context.classLoader)
-            ?: findClassIfExists("com.netease.cloudmusic.music.biz.comment.meta.SortTypeList", context.classLoader)
-            ?: return
-        val method = findMethodIfExists(sortTypeListClass, "parseList", JSONArray::class.java) ?: return
-
-        module.hook(method).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                try {
-                    val array = chain.getArg(0) as? JSONArray
-                    if (array != null && array.length() >= 3) {
-                        val array2 = JSONArray()
-                        array2.put(array.getJSONObject(1))
-                        array2.put(array.getJSONObject(2))
-                        array2.put(array.getJSONObject(0))
-                        // 使用修改后的参数执行原始方法
-                        return chain.proceed(arrayOf(array2))
-                    }
-                } catch (e: Throwable) {
-                    LogUtils.e("$TAG: hookCommentHot 异常 - ${e.message}")
-                }
-                return chain.proceed()
-            }
-        })
-        LogUtils.i("$TAG: hookCommentHot 成功")
-    }
-
-    // ==================== 自定义播放界面背景 ====================
-
-    /**
-     * Hook PlayerBackgroundImage.setBlurCover - 替换播放界面背景图片和模糊度
-     *
-     * PlayerBackgroundImage 和 setBlurCover() 在各版本中均为明文，无需混淆名回退
-     */
-    private fun hookPlayerBackground() {
-        val clazz = findClassIfExists(
-            "com.netease.cloudmusic.ui.PlayerBackgroundImage", context.classLoader
-        ) ?: return
-        val method = findMethodIfExists(
-            clazz, "setBlurCover", String::class.java, String::class.java, Integer.TYPE
-        ) ?: return
-
-        module.hook(method).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                // 替换背景图片URL和模糊度，保留原始第二参数（歌曲封面URL）
-                val url = SettingHelper.getInstance().getPictureUrl()
-                val originalCover = chain.getArg(1)
-                val blur = SettingHelper.getInstance().getBackgroundBlur()
-                return chain.proceed(arrayOf(url, originalCover, blur))
-            }
-        })
-        LogUtils.i("$TAG: hookPlayerBackground 成功")
-    }
-
-    // ==================== 播放页黑胶隐藏和音谱移除 ====================
-
-    /**
-     * Hook PlayerActivity.onCreate - 隐藏黑胶唱片和音谱按钮
-     *
-     * 功能：
-     * 1. 黑胶隐藏（beauty_black_hide_key）：隐藏PlayerDiscViewFlipper中的黑胶唱片，仅显示专辑封面
-     * 2. 音谱移除（beauty_ksong_hide_key）：将音谱/铃声按钮的宽高设为0，使其不可见
-     *
-     * 参考dev分支PlayerActivityHook实现
-     */
-    private fun hookPlayerActivity() {
-        val black = SettingHelper.getInstance().getSetting(SettingHelper.beauty_black_hide_key)
-        val ksong = SettingHelper.getInstance().getSetting(SettingHelper.beauty_ksong_hide_key)
-        if (!black && !ksong) return
-
-        val playerActivityClass = findClassIfExists("com.netease.cloudmusic.activity.PlayerActivity", context.classLoader) ?: run {
-            LogUtils.w("$TAG: hookPlayerActivity PlayerActivity类未找到")
-            return
-        }
-        val onCreateMethod = findMethodIfExists(playerActivityClass, "onCreate", android.os.Bundle::class.java) ?: run {
-            LogUtils.w("$TAG: hookPlayerActivity onCreate方法未找到")
-            return
-        }
-
-        module.hook(onCreateMethod).intercept(object : XposedInterface.Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                val result = chain.proceed()
-                try {
-                    val activity = chain.thisObject
-                    var playerDiscViewFlipper: android.widget.ViewFlipper? = null
-
-                    // 遍历PlayerActivity的所有字段，查找黑胶和音谱相关View
-                    for (field in activity.javaClass.declaredFields) {
-                        // 黑胶隐藏：查找PlayerDiscViewFlipper类型字段
-                        if (black && field.type.name.contains("PlayerDiscViewFlipper")) {
-                            field.isAccessible = true
-                            playerDiscViewFlipper = field.get(activity) as? android.widget.ViewFlipper
-                        }
-                        // 音谱移除：查找ImageView类型字段，检查contentDescription是否为"音韵"或"铃声"
-                        if (ksong && field.type.name.contains("ImageView")) {
-                            field.isAccessible = true
-                            val imageView = field.get(activity) as? android.widget.ImageView
-                            if (imageView != null) {
-                                val desc = imageView.contentDescription?.toString() ?: ""
-                                if (desc.contains("音韵") || desc.contains("铃声")) {
-                                    val layoutParams = imageView.layoutParams
-                                    layoutParams.width = 0
-                                    layoutParams.height = 0
-                                    imageView.layoutParams = layoutParams
-                                    // 同时隐藏父View
-                                    (imageView.parent as? android.view.View)?.let { parent ->
-                                        val parentParams = parent.layoutParams
-                                        parentParams.width = 0
-                                        parentParams.height = 0
-                                        parent.layoutParams = parentParams
-                                    }
-                                    LogUtils.i("$TAG: hookPlayerActivity 隐藏音谱按钮")
-                                }
-                            }
-                        }
-                    }
-
-                    // 黑胶隐藏：调整ViewFlipper中子View的布局
-                    if (playerDiscViewFlipper != null) {
-                        for (i in 0 until playerDiscViewFlipper.childCount) {
-                            var coverView: android.view.View? = null
-                            var imageView: android.view.View? = null
-                            val rotationRelativeLayout = playerDiscViewFlipper.getChildAt(i) as android.widget.RelativeLayout
-                            for (j in 0 until rotationRelativeLayout.childCount) {
-                                val child = rotationRelativeLayout.getChildAt(j)
-                                if (child.javaClass.name.contains("ImageView") &&
-                                    child.javaClass.name.contains("android")) {
-                                    coverView = child
-                                } else {
-                                    imageView = child
-                                }
-                            }
-                            if (coverView != null && imageView != null) {
-                                val coverViewF = coverView
-                                val imageViewF = imageView
-                                coverViewF.post {
-                                    val layoutParams = imageViewF.layoutParams as android.widget.RelativeLayout.LayoutParams
-                                    layoutParams.height = coverViewF.height
-                                    layoutParams.width = coverViewF.width
-                                    imageViewF.layoutParams = layoutParams
-                                    coverViewF.visibility = android.view.View.INVISIBLE
-                                }
-                            }
-                        }
-                        LogUtils.i("$TAG: hookPlayerActivity 隐藏黑胶唱片")
-                    }
-                } catch (e: Throwable) {
-                    LogUtils.e("$TAG: hookPlayerActivity 异常 - ${e.message}")
-                }
-                return result
-            }
-        })
-        LogUtils.i("$TAG: hookPlayerActivity 成功")
     }
 
     // ==================== 辅助方法 ====================

@@ -71,27 +71,4 @@ class ExtraDao private constructor(context: Context) {
         return extra
     }
 
-    /**
-     * 删除某条额外记录
-     */
-    @Synchronized
-    fun deleteExtra(key: String) {
-        val db = dbHelper.writableDatabase
-        if (db.isOpen) {
-            db.delete(TABLE_NAME, "$EXTRA_KEY = ? ", arrayOf(key))
-        }
-        db.close()
-    }
-
-    /**
-     * 删除所有额外记录
-     */
-    @Synchronized
-    fun deleteAllExtra() {
-        val db = dbHelper.writableDatabase
-        if (db.isOpen) {
-            db.delete(TABLE_NAME, null, null)
-        }
-        db.close()
-    }
 }

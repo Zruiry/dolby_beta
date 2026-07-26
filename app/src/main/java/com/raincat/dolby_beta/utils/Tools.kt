@@ -1,5 +1,5 @@
 /**
- * 工具类 - 提供进程名获取、Toast显示、dp转px、时间戳计算、Shell命令执行等通用工具方法
+ * 工具类 - 提供进程名获取、Toast显示、dp转px、Shell命令执行等通用工具方法
  *
  */
 package com.raincat.dolby_beta.utils
@@ -12,7 +12,6 @@ import android.widget.Toast
 import com.stericson.RootShell.execution.Command
 import com.stericson.RootTools.RootTools
 import java.io.IOException
-import java.util.Calendar
 import java.util.concurrent.TimeoutException
 
 object Tools {
@@ -53,18 +52,6 @@ object Tools {
     fun dp2px(context: Context, dpValue: Float): Int {
         val scale = context.resources.displayMetrics.density
         return (dpValue * scale + 0.5f).toInt()
-    }
-
-    /**
-     * 获取今天0点的时间戳
-     */
-    @JvmStatic
-    fun getTodayStartTime(): Long {
-        val calendar = Calendar.getInstance()
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        return calendar.time.time
     }
 
     /**

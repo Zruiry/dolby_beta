@@ -50,14 +50,4 @@ class ExtraDbOpenHelper private constructor(
         // 无降级逻辑
     }
 
-    override fun close() {
-        instance?.let {
-            try {
-                it.writableDatabase.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            instance = null
-        }
-    }
 }

@@ -17,14 +17,9 @@ import android.os.Build
 import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.helper.ExtraHelper
 import com.raincat.dolby_beta.helper.SettingHelper
-import com.raincat.dolby_beta.hook.AdAndUpdateHook
-import com.raincat.dolby_beta.hook.AutoSignInHook
 import com.raincat.dolby_beta.hook.BeautyHook
-import com.raincat.dolby_beta.hook.BlackHook
 import com.raincat.dolby_beta.hook.CdnHook
 import com.raincat.dolby_beta.hook.EAPIHook
-import com.raincat.dolby_beta.hook.HideSidebarHook
-import com.raincat.dolby_beta.hook.ListentogetherHook
 import com.raincat.dolby_beta.hook.ProxyHook
 import com.raincat.dolby_beta.hook.SettingHook
 import com.raincat.dolby_beta.utils.LogUtils
@@ -65,7 +60,7 @@ class HookOther(
     /**
      * 主进程初始化
      * - attachBaseContext阶段：ProxyHook + 脚本启动 + SongPrivilege
-     * - onCreate阶段：SettingHook + EAPIHook + CdnHook + 美化/黑胶/签到等Hook
+     * - onCreate阶段：SettingHook + EAPIHook + CdnHook + 美化Hook
      */
     private fun initMainProcess(module: XposedModule, context: Context, versionCode: Int, isEarly: Boolean) {
         if (isEarly) {
@@ -107,16 +102,11 @@ class HookOther(
     }
 
     /**
-     * 初始化功能Hook（美化、黑胶VIP、签到、广告、一起听、侧边栏等）
+     * 初始化功能Hook（仅美化功能）
      */
     private fun initFeatureHooks(module: XposedModule, context: Context, versionCode: Int) {
         try {
-            BlackHook(module, context, versionCode)
-            ListentogetherHook(module, context, versionCode)
-            AutoSignInHook(module, context, versionCode)
-            AdAndUpdateHook(module, context, versionCode)
             BeautyHook(module, context, versionCode)
-            HideSidebarHook(module, context, versionCode)
             LogUtils.i("HookOther: 功能Hook初始化完成")
         } catch (e: Throwable) {
             LogUtils.e("HookOther: 功能Hook初始化失败 - ${e.message}")

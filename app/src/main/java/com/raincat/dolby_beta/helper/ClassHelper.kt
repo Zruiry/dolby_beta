@@ -1,32 +1,27 @@
 /**
- * 类加载帮助 - 仅保留音源代理所需的内部类
- * 保留：Cookie, OKHttp3Response, OKHttp3Header, HttpResponse, HttpUrl, HttpParams, HttpInterceptor
+ * 类加载帮助 - 包含音源代理和美化设置所需的内部类
+ * 保留：OKHttp3Response, OKHttp3Header, HttpResponse, HttpUrl, HttpParams, HttpInterceptor, BottomTabManager, TabIndexManager, FragmentPagerAdapter
  *
  * 从Legacy API迁移到Modern libxposed API
- * 旧版：XposedHelpers.findClassIfExists/findMethodsByExactParameters/callMethod/callStaticMethod
+ * 旧版：XposedHelpers.findClassIfExists/callMethod/callStaticMethod
  * 新版：Java反射 ClassLoader.loadClass/Method.invoke/Field.get
  *
  */
 package com.raincat.dolby_beta.helper
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.net.Uri
 import com.annimon.stream.Stream
 import com.raincat.dolby_beta.utils.LogUtils
 import org.jf.dexlib2.DexFileFactory
 import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import org.jf.dexlib2.iface.MultiDexContainer
-import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
 import java.io.Serializable
-import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Collections
-import java.util.NoSuchElementException
-import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -155,122 +150,6 @@ object ClassHelper {
             classLoader.loadClass(className)
         } catch (e: ClassNotFoundException) {
             null
-        }
-    }
-
-    /**
-     * 按精确参数类型查找方法（替代XposedHelpers.findMethodsByExactParameters）
-     */
-    private fun findMethodsByExactParameters(clazz: Class<*>, returnType: Class<*>?, vararg parameterTypes: Class<*>): List<Method> {
-        val result = mutableListOf<Method>()
-        for (method in clazz.declaredMethods) {
-            val methodParamTypes = method.parameterTypes
-            if (methodParamTypes.size != parameterTypes.size) continue
-            var paramsMatch = true
-            for (i in parameterTypes.indices) {
-                if (methodParamTypes[i] != parameterTypes[i]) {
-                    paramsMatch = false
-                    break
-                }
-            }
-            if (!paramsMatch) continue
-            if (returnType != null && method.returnType != returnType) continue
-            result.add(method)
-        }
-        return result
-    }
-
-    /**
-     * 按精确类型查找字段（替代XposedHelpers.findFirstFieldByExactType）
-     */
-    @Throws(NoSuchFieldException::class)
-    private fun findFirstFieldByExactType(clazz: Class<*>, type: Class<*>): Field {
-        for (field in clazz.declaredFields) {
-            if (field.type == type) {
-                return field
-            }
-        }
-        throw NoSuchFieldException("Field of type ${type.name} not found in ${clazz.name}")
-    }
-
-    /**
-     * Cookie获取 - 代理请求时需要携带Cookie
-     */
-    object Cookie {
-        private var clazz: Class<*>? = null
-        private var abstractClazz: Class<*>? = null
-
-        @JvmStatic
-        fun getCookie(context: Context): String {
-            if (clazz == null) {
-                val pattern: Pattern = when {
-                    versionCode < 154 -> Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
-                    versionCode < 8008050 -> Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\\.[a-z]+$")
-                    else -> Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.cookie\\.store\\.[a-zA-Z0-9]{1,25}$")
-                }
-
-                val list = getFilteredClasses(pattern, null)
-
-                try {
-                    abstractClazz = Stream.of(list)
-                        .map { getClassByXposed(it) }
-                        .filter { it != null }
-                        .map { it!! }
-                        .filter { c -> Modifier.isPublic(c.modifiers) }
-                        .filter { c -> c.superclass == Any::class.java }
-                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == ConcurrentHashMap::class.java } }
-                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == SharedPreferences::class.java } }
-                        .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == Long::class.javaPrimitiveType } }
-                        .findFirst()
-                        .orElse(null)
-
-                    if (versionCode >= 154 && abstractClazz != null) {
-                        val absClazz = abstractClazz!!
-                        clazz = Stream.of(list)
-                            .map { getClassByXposed(it) }
-                            .filter { it != null }
-                            .map { it!! }
-                            .filter { c -> Modifier.isPublic(c.modifiers) }
-                            .filter { c -> !Modifier.isInterface(c.modifiers) }
-                            .filter { c -> c.superclass == absClazz }
-                            .findFirst()
-                            .orElse(null)
-                    } else {
-                        clazz = abstractClazz
-                    }
-                } catch (e: NoSuchElementException) {
-                    LogUtils.e("ClassHelper: 找不到Cookie核心类")
-                }
-            }
-
-            var cookieString: Any? = null
-            if (versionCode >= 154 && clazz != null && abstractClazz != null) {
-                val cookieMethod = findMethodsByExactParameters(clazz!!, clazz).getOrNull(0) ?: return "MUSIC_U="
-                val cookie = try {
-                    cookieMethod.invoke(null)
-                } catch (e: Exception) {
-                    LogUtils.e("ClassHelper: Cookie静态方法调用失败 - ${e.message}")
-                    return "MUSIC_U="
-                }
-                for (method in findMethodsByExactParameters(abstractClazz!!, String::class.java)) {
-                    if (method.typeParameters.isEmpty() && method.modifiers == Modifier.PUBLIC) {
-                        try {
-                            cookieString = method.invoke(cookie)
-                        } catch (e: Exception) {
-                            LogUtils.e("ClassHelper: Cookie实例方法调用失败 - ${e.message}")
-                        }
-                    }
-                }
-            } else if (clazz != null) {
-                val cookieMethod = findMethodsByExactParameters(clazz!!, String::class.java).getOrNull(0) ?: return "MUSIC_U="
-                try {
-                    cookieString = cookieMethod.invoke(null)
-                } catch (e: Exception) {
-                    LogUtils.e("ClassHelper: Cookie静态方法调用失败 - ${e.message}")
-                }
-            }
-
-            return "MUSIC_U=$cookieString"
         }
     }
 
@@ -719,158 +598,6 @@ object ClassHelper {
                 LogUtils.e("ClassHelper: FragmentPagerAdapter查找失败 - ${e.message}")
             }
             return clazz
-        }
-    }
-
-    /**
-     * 下载传输类查找 - DownloadMD5Hook需要
-     * 查找 com.netease.cloudmusic.module.transfer.download 下的混淆类
-     */
-    object DownloadTransfer {
-        private var checkMd5Method: Method? = null
-        private var checkDownloadStatusMethod: Method? = null
-
-        /**
-         * 下载完成后的MD5检查方法
-         * 特征：4个参数，第1个为File，第2个为File
-         */
-        @JvmStatic
-        fun getCheckMd5Method(context: Context): Method? {
-            if (checkMd5Method == null) {
-                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.transfer\\.download\\.[a-z0-9]{1,2}$")
-                val list = getFilteredClasses(pattern, Collections.reverseOrder())
-
-                try {
-                    val targetClass = Stream.of(list)
-                        .map { getClassByXposed(it) }
-                        .filter { it != null }
-                        .map { it!! }
-                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
-                        .filter { c -> Modifier.isPublic(c.modifiers) }
-                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                            m.parameterTypes.size == 4 &&
-                            m.parameterTypes[0] == File::class.java &&
-                            m.parameterTypes[1] == File::class.java
-                        }}
-                        .findFirst()
-                        .orElse(null)
-
-                    if (targetClass != null) {
-                        checkMd5Method = Stream.of(*targetClass.declaredMethods)
-                            .filter { m -> m.parameterTypes.size == 4 }
-                            .filter { m -> m.parameterTypes[0] == File::class.java }
-                            .filter { m -> m.parameterTypes[1] == File::class.java }
-                            .findFirst()
-                            .orElse(null)
-                    }
-                } catch (e: Exception) {
-                    LogUtils.e("ClassHelper: 找不到Transfer核心类 - ${e.message}")
-                }
-            }
-            return checkMd5Method
-        }
-
-        /**
-         * 下载之前的下载状态检查方法
-         * 特征：返回long，5个参数，第2个为int，第4个为File，第5个为long
-         */
-        @JvmStatic
-        fun getCheckDownloadStatusMethod(context: Context): Method? {
-            if (checkDownloadStatusMethod == null) {
-                val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.transfer\\.download\\.[a-z0-9]{1,2}$")
-                val list = getFilteredClasses(pattern, Collections.reverseOrder())
-
-                try {
-                    val targetClass = Stream.of(list)
-                        .map { getClassByXposed(it) }
-                        .filter { it != null }
-                        .map { it!! }
-                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
-                        .filter { c -> Modifier.isPublic(c.modifiers) }
-                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m ->
-                            m.returnType == Long::class.javaPrimitiveType &&
-                            m.parameterTypes.size == 5 &&
-                            m.parameterTypes[1] == Integer.TYPE &&
-                            m.parameterTypes[3] == File::class.java &&
-                            m.parameterTypes[4] == Long::class.javaPrimitiveType
-                        }}
-                        .findFirst()
-                        .orElse(null)
-
-                    if (targetClass != null) {
-                        checkDownloadStatusMethod = Stream.of(*targetClass.declaredMethods)
-                            .filter { m -> m.returnType == Long::class.javaPrimitiveType }
-                            .filter { m -> m.parameterTypes.size == 5 }
-                            .filter { m -> m.parameterTypes[1] == Integer.TYPE }
-                            .filter { m -> m.parameterTypes[3] == File::class.java }
-                            .filter { m -> m.parameterTypes[4] == Long::class.javaPrimitiveType }
-                            .findFirst()
-                            .orElse(null)
-                    }
-                } catch (e: Exception) {
-                    LogUtils.e("ClassHelper: 找不到Transfer状态检查方法 - ${e.message}")
-                }
-            }
-            return checkDownloadStatusMethod
-        }
-    }
-
-    /**
-     * 广告类查找 - AdExtraHook需要
-     * 查找 com.netease.cloudmusic.module.ad 下的混淆类
-     */
-    object Ad {
-        private var adClazz: Class<*>? = null
-        private var clazz: Class<*>? = null
-
-        @JvmStatic
-        fun getClazz(context: Context): Class<*>? {
-            if (clazz == null) {
-                adClazz = findClassIfExists("com.netease.cloudmusic.meta.Ad", classLoader!!)
-                try {
-                    val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.module\\.ad\\.[a-z]$")
-                    val list = getFilteredClasses(pattern, Collections.reverseOrder())
-                    clazz = Stream.of(list)
-                        .map { getClassByXposed(it) }
-                        .filter { it != null }
-                        .map { it!! }
-                        .filter { c -> Modifier.isPublic(c.modifiers) }
-                        .filter { c -> !Modifier.isInterface(c.modifiers) }
-                        .filter { c -> !Modifier.isStatic(c.modifiers) }
-                        .filter { c -> !Modifier.isAbstract(c.modifiers) }
-                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.returnType.name.contains("VideoAdInfo") } }
-                        .filter { c -> Stream.of(*c.declaredMethods).anyMatch { m -> m.returnType == adClazz } }
-                        .findFirst()
-                        .orElse(null)
-                } catch (e: Exception) {
-                    LogUtils.e("ClassHelper: Ad类查找失败 - ${e.message}")
-                }
-            }
-            return clazz
-        }
-
-        /**
-         * 获取广告相关方法列表
-         * 筛选返回类型为meta包下类、且参数包含JSONObject的方法
-         */
-        @JvmStatic
-        fun getAdMethod(context: Context): List<Method>? {
-            return try {
-                val adClass = getClazz(context) ?: return null
-                val methodList = adClass.declaredMethods.toList()
-                val hookMethodList = Stream.of(methodList)
-                    .filter { m -> m.returnType.name.contains("com.netease.cloudmusic.meta") }
-                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c == JSONObject::class.java } }
-                    .toList()
-                hookMethodList.addAll(Stream.of(methodList)
-                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c.name.contains("com.netease.cloudmusic.meta") } }
-                    .filter { m -> Stream.of(*m.parameterTypes).anyMatch { c -> c == JSONObject::class.java } }
-                    .toList())
-                hookMethodList
-            } catch (e: Exception) {
-                LogUtils.e("ClassHelper: getAdMethod失败 - ${e.message}")
-                null
-            }
         }
     }
 }
