@@ -27,38 +27,20 @@
 package com.raincat.dolby_beta.hook
 
 import android.app.Activity
-import android.app.ActivityManager
-import android.app.AlertDialog
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.graphics.Color
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.TypedValue
-import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import com.raincat.dolby_beta.helper.ExtraHelper
-import com.raincat.dolby_beta.helper.ScriptHelper
 import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.ui.isDarkTheme
+import com.raincat.dolby_beta.ui.showSettingsDialog
 import com.raincat.dolby_beta.utils.LogUtils
-import com.raincat.dolby_beta.utils.Tools
-import com.raincat.dolby_beta.view.BaseDialogInputItem
-import com.raincat.dolby_beta.view.BaseDialogItem
-import com.raincat.dolby_beta.view.proxy.*
-import com.raincat.dolby_beta.view.proxy.configuration.*
-import com.raincat.dolby_beta.view.setting.TitleView
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
- * 设置Hook - 长按"我的"弹出设置对话框
+ * 设置Hook - 长按"我的"弹出 Compose 设置菜单
  */
 class SettingHook(
     private val module: XposedModule,
@@ -66,15 +48,11 @@ class SettingHook(
     versionCode: Int
 ) {
 
-    private var dialogRoot: LinearLayout? = null
-    private var dialogProxyRoot: LinearLayout? = null
-    private var dialogScriptRoot: LinearLayout? = null
-    private var dialogBeautyRoot: LinearLayout? = null
-    /** 脚本启动命令显示TextView引用（用于refresh时更新） */
-    private var scriptCommandText: TextView? = null
-    private var broadcastReceiver: BroadcastReceiver? = null
     /** 标记hook是否已成功应用 */
     private var hookApplied = false
+    /** 设置菜单是否正在显示（防止重复弹出） */
+    @Volatile
+    private var dialogShowing = false
     /** 主线程Handler */
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -155,7 +133,7 @@ class SettingHook(
                             if ("mine" == tabCode) {
                                 val activity = currentActivity
                                 if (activity != null) {
-                                    mainHandler.post { showSettingDialog(activity) }
+                                    mainHandler.post { showSettingsMenu(activity) }
                                     LogUtils.i("SettingHook: [特征匹配-$className] 长按'我的'成功!")
                                 }
                                 return true
@@ -244,270 +222,19 @@ class SettingHook(
             return null
         }
 
-    // ==================== 对话框相关方法 ====================
+    // ==================== 设置菜单弹出 ====================
 
-    private fun showSettingDialog(context: Context) {
+    /** 弹出 Compose 设置菜单（长按"我的"时调用） */
+    private fun showSettingsMenu(activity: Activity) {
+        if (dialogShowing) return
+        dialogShowing = true
         try {
-            dialogRoot = BaseDialogItem(context)
-            dialogRoot!!.orientation = LinearLayout.VERTICAL
-            val scrollView = ScrollView(context)
-            scrollView.overScrollMode = ScrollView.OVER_SCROLL_NEVER
-            scrollView.isVerticalScrollBarEnabled = false
-            scrollView.addView(dialogRoot)
-
-        // 主设置页面布局：总开关 → DEX缓存 → 音源代理 → 美化 → 重置 → 关于
-        val masterView = com.raincat.dolby_beta.view.setting.MasterView(context)
-        val dexView = com.raincat.dolby_beta.view.setting.DexView(context)
-        val proxyView = com.raincat.dolby_beta.view.setting.ProxyView(context)
-        val beautyView = com.raincat.dolby_beta.view.setting.BeautyView(context)
-        val resetModuleView = com.raincat.dolby_beta.view.setting.ResetModuleView(context)
-        val aboutView = com.raincat.dolby_beta.view.setting.AboutView(context)
-
-        // 依赖关系：DEX缓存、音源代理、美化 依赖总开关
-        dexView.setBaseOnView(masterView)
-        proxyView.setBaseOnView(masterView)
-        beautyView.setBaseOnView(masterView)
-
-        dialogRoot!!.addView(TitleView(context))
-        dialogRoot!!.addView(masterView)
-        dialogRoot!!.addView(dexView)
-        dialogRoot!!.addView(proxyView)
-        dialogRoot!!.addView(beautyView)
-        dialogRoot!!.addView(resetModuleView)
-        dialogRoot!!.addView(aboutView)
-
-        registerBroadcastReceiver(context)
-
-        AlertDialog.Builder(context)
-            .setView(scrollView)
-            .setCancelable(false)
-            .setPositiveButton("确定") { _, _ -> }
-            .setNegativeButton("重启网易云") { _, _ -> restartApplication(context) }
-            .show()
+            showSettingsDialog(activity, Runnable { dialogShowing = false }, isDarkTheme(activity))
+            LogUtils.i("SettingHook: Compose 设置菜单已弹出")
         } catch (e: Throwable) {
-            LogUtils.e("SettingHook: showSettingDialog异常 - ${LogUtils.getStackTraceString(e)}")
+            dialogShowing = false
+            LogUtils.e("SettingHook: showSettingsDialog 异常 - ${LogUtils.getStackTraceString(e)}")
         }
-    }
-
-    private fun showProxyConfigurationDialog(context: Context) {
-        dialogProxyRoot = BaseDialogItem(context)
-        dialogProxyRoot!!.orientation = LinearLayout.VERTICAL
-        val proxyHttpView = ProxyHttpView(context)
-        val proxyPortView = ProxyPortView(context)
-
-        dialogProxyRoot!!.addView(ProxyConfigurationTitleView(context))
-        dialogProxyRoot!!.addView(proxyHttpView)
-        dialogProxyRoot!!.addView(proxyPortView)
-
-        AlertDialog.Builder(context)
-            .setView(dialogProxyRoot)
-            .setCancelable(true)
-            .setPositiveButton("仅保存") { _, _ -> }
-            .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    /**
-     * 显示音源代理设置对话框
-     * 布局和功能以本项目为准
-     */
-    private fun showProxyDialog(context: Context) {
-        dialogProxyRoot = BaseDialogItem(context)
-        dialogProxyRoot!!.orientation = LinearLayout.VERTICAL
-        val scrollView = ScrollView(context)
-        scrollView.overScrollMode = ScrollView.OVER_SCROLL_NEVER
-        scrollView.isVerticalScrollBarEnabled = false
-        scrollView.addView(dialogProxyRoot)
-
-        val proxyMasterView = ProxyMasterView(context)
-        val proxyGrayView = ProxyGrayView(context)
-        proxyGrayView.setBaseOnView(proxyMasterView)
-        val proxyCoverView = ProxyCoverView(context)
-        proxyCoverView.setBaseOnView(proxyMasterView)
-        val scriptConfigurationView = ScriptConfigurationView(context)
-        scriptConfigurationView.setBaseOnView(proxyMasterView)
-        val proxyPriorityView = ProxyPriorityView(context)
-        proxyPriorityView.setBaseOnView(proxyMasterView)
-        val proxyFlacView = ProxyFlacView(context)
-        proxyFlacView.setBaseOnView(proxyMasterView)
-        val proxyServerView = ProxyServerView(context)
-        proxyServerView.setBaseOnView(proxyMasterView)
-        val proxyConfigurationView = ProxyConfigurationView(context)
-        proxyConfigurationView.setBaseOnView(proxyMasterView)
-
-        dialogProxyRoot!!.addView(ProxyTitleView(context))
-        dialogProxyRoot!!.addView(proxyMasterView)
-        dialogProxyRoot!!.addView(proxyCoverView)
-        dialogProxyRoot!!.addView(scriptConfigurationView)
-        // 不变灰放在脚本参数配置下面（与dev分支一致）
-        dialogProxyRoot!!.addView(proxyGrayView)
-        dialogProxyRoot!!.addView(proxyPriorityView)
-        dialogProxyRoot!!.addView(proxyFlacView)
-        dialogProxyRoot!!.addView(proxyServerView)
-        dialogProxyRoot!!.addView(proxyConfigurationView)
-
-        AlertDialog.Builder(context)
-            .setView(scrollView)
-            .setCancelable(true)
-            .setPositiveButton("仅保存") { _, _ -> }
-            .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    /**
-     * 显示美化设置对话框
-     */
-    private fun showBeautyDialog(context: Context) {
-        dialogBeautyRoot = BaseDialogItem(context)
-        dialogBeautyRoot!!.orientation = LinearLayout.VERTICAL
-        val scrollView = ScrollView(context)
-        scrollView.overScrollMode = ScrollView.OVER_SCROLL_NEVER
-        scrollView.isVerticalScrollBarEnabled = false
-        scrollView.addView(dialogBeautyRoot)
-
-        dialogBeautyRoot!!.addView(com.raincat.dolby_beta.view.beauty.BeautyTitleView(context))
-        val beautyTabHideView = com.raincat.dolby_beta.view.beauty.BeautyTabHideView(context)
-
-        dialogBeautyRoot!!.addView(beautyTabHideView)
-
-        AlertDialog.Builder(context)
-            .setView(scrollView)
-            .setCancelable(true)
-            .setPositiveButton("仅保存") { _, _ -> }
-            .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    private fun showScriptConfigurationDialog(context: Context) {
-        dialogScriptRoot = BaseDialogItem(context)
-        dialogScriptRoot!!.orientation = LinearLayout.VERTICAL
-        val proxyOriginalView = ProxyOriginalView(context)
-        val proxyQqView = ProxyQqView(context)
-        val proxyMiguView = ProxyMiguView(context)
-
-        dialogScriptRoot!!.addView(ScriptConfigurationTitleView(context))
-        dialogScriptRoot!!.addView(proxyOriginalView)
-        dialogScriptRoot!!.addView(proxyQqView)
-        dialogScriptRoot!!.addView(proxyMiguView)
-        // 底部显示当前配置生成的脚本启动命令
-        dialogScriptRoot!!.addView(createScriptCommandView(context))
-
-        AlertDialog.Builder(context)
-            .setView(dialogScriptRoot)
-            .setCancelable(true)
-            .setPositiveButton("仅保存") { _, _ -> }
-            .setNegativeButton("保存并重启") { _, _ -> restartApplication(context) }
-            .show()
-    }
-
-    /**
-     * 创建脚本启动命令显示视图
-     * 包含标题"当前启动命令"和命令文本，命令文本会随配置变化而刷新
-     */
-    private fun createScriptCommandView(context: Context): LinearLayout {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            val padding = Tools.dp2px(context, 10f)
-            setPadding(padding, Tools.dp2px(context, 5f), padding, padding)
-        }
-        // 标题
-        val titleView = TextView(context).apply {
-            text = "当前启动命令"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTextColor(Color.BLACK)
-            setPadding(0, Tools.dp2px(context, 5f), 0, Tools.dp2px(context, 3f))
-        }
-        container.addView(titleView)
-        // 命令文本
-        scriptCommandText = TextView(context).apply {
-            text = ScriptHelper.getScriptCommand()
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            setTextColor(Color.DKGRAY)
-            maxLines = Int.MAX_VALUE
-            setLineSpacing(2f, 1f)
-        }
-        container.addView(scriptCommandText)
-        return container
-    }
-
-    private fun registerBroadcastReceiver(context: Context) {
-        broadcastReceiver?.let {
-            try { context.unregisterReceiver(it) } catch (_: Exception) {}
-        }
-        val intentFilter = IntentFilter()
-        intentFilter.addAction(SettingHelper.refresh_setting)
-        intentFilter.addAction(SettingHelper.proxy_setting)
-        intentFilter.addAction(SettingHelper.beauty_setting)
-        intentFilter.addAction(SettingHelper.proxy_configuration_setting)
-        intentFilter.addAction(SettingHelper.script_configuration_setting)
-        broadcastReceiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, intent: Intent) {
-                try {
-                    val action = intent.action
-                    if (action == SettingHelper.refresh_setting) {
-                        dialogRoot?.let { root ->
-                            for (i in 0 until root.childCount) {
-                                (root.getChildAt(i) as? BaseDialogItem)?.refresh()
-                            }
-                        }
-                        dialogProxyRoot?.let { root ->
-                            for (i in 0 until root.childCount) {
-                                val child = root.getChildAt(i)
-                                if (child is BaseDialogItem) child.refresh()
-                                else if (child is BaseDialogInputItem) child.refresh()
-                            }
-                        }
-                        dialogScriptRoot?.let { root ->
-                            for (i in 0 until root.childCount) {
-                                val child = root.getChildAt(i)
-                                if (child is BaseDialogItem) child.refresh()
-                                else if (child is BaseDialogInputItem) child.refresh()
-                            }
-                            // 刷新脚本启动命令显示
-                            scriptCommandText?.text = ScriptHelper.getScriptCommand()
-                        }
-                        dialogBeautyRoot?.let { root ->
-                            for (i in 0 until root.childCount) {
-                                (root.getChildAt(i) as? BaseDialogItem)?.refresh()
-                            }
-                        }
-                        return
-                    }
-                    // 广播接收器的Context是Application Context，AlertDialog需要Activity Context才能显示窗口
-                    val activityContext = currentActivity
-                    if (activityContext == null) {
-                        LogUtils.w("SettingHook: 无法获取Activity Context，跳过对话框显示 action=$action")
-                        return
-                    }
-                    when (action) {
-                        SettingHelper.proxy_setting -> showProxyDialog(activityContext)
-                        SettingHelper.beauty_setting -> showBeautyDialog(activityContext)
-                        SettingHelper.proxy_configuration_setting -> showProxyConfigurationDialog(activityContext)
-                        SettingHelper.script_configuration_setting -> showScriptConfigurationDialog(activityContext)
-                    }
-                } catch (e: Throwable) {
-                    LogUtils.e("SettingHook: 处理广播异常 action=${intent.action} - ${LogUtils.getStackTraceString(e)}")
-                }
-            }
-        }
-        // Android 13+（API 33+）动态注册广播接收器必须指定导出标志，否则抛SecurityException导致闪退
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(broadcastReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(broadcastReceiver, intentFilter)
-        }
-    }
-
-    private fun restartApplication(context: Context) {
-        ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val runningAppProcessInfoList = activityManager.runningAppProcesses
-        for (runningAppProcessInfo in runningAppProcessInfoList) {
-            if (runningAppProcessInfo.processName.contains(":play")) {
-                android.os.Process.killProcess(runningAppProcessInfo.pid)
-            }
-        }
-        System.exit(0)
     }
 
     private fun findClassIfExists(className: String, classLoader: ClassLoader): Class<*>? {

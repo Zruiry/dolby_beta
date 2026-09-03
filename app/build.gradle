@@ -37,6 +37,13 @@ android {
     // AGP 8.x默认关闭BuildConfig生成，项目使用了buildConfigField，需要手动启用
     buildFeatures {
         buildConfig true
+        // 启用 Jetpack Compose（用于设置界面美化）
+        compose true
+    }
+
+    // Compose 编译器版本（Kotlin 1.9.25 → Compose Compiler 1.5.15）
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.15'
     }
 
     // AGP 8.x中extractNativeLibs应从AndroidManifest移到此处
@@ -112,6 +119,18 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.8.9'
     // Kotlin标准库
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+
+    // ===== Jetpack Compose（用于设置界面美化）=====
+    // Compose BOM 统一管理 Compose 库版本
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    // Material 3 组件库（Switch / Surface / Card 等）
+    implementation 'androidx.compose.material3:material3'
+    // Compose 核心 UI 运行时与工具
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    // Compose 与 Android 互操作（ComponentDialog 等）
+    implementation 'androidx.activity:activity-compose:1.9.0'
 }
 
 // ============================================================================

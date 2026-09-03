@@ -19,6 +19,8 @@ import com.stericson.RootShell.execution.Command
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
@@ -139,14 +141,14 @@ object ScriptHelper {
     }
 
     /**
-     * 采用代理模式执行UnblockNeteaseMusic（使用外部代理服务器，不启动本地脚本）
+     * 采用服务器代理模式（不启动本地脚本，可用性由 waitAndCheckProxy 探测后再判定）
      */
     @JvmStatic
-    fun startHttpProxyMode(context: Context) {
+    fun startHttpProxyMode() {
         stopScript()
-        ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
-        Tools.showToastOnLooper(context, "服务器代理运行成功")
-        LogUtils.i("ScriptHelper: 服务器代理模式启动成功")
+        // 不在此断言成功：是否可用需 waitAndCheckProxy 探测后统一置状态并提示，避免矛盾提示
+        ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
+        LogUtils.i("ScriptHelper: 服务器代理模式启动，等待探测可用性")
     }
 
     /**
@@ -220,7 +222,7 @@ object ScriptHelper {
                     neteaseContext?.sendBroadcast(intent)
                 } else if (line.contains("HTTP Server running")) {
                     if (neteaseContext != null && ExtraHelper.getExtraDate(ExtraHelper.SCRIPT_STATUS) == "0")
-                        Tools.showToastOnLooper(neteaseContext!!, "UnblockNeteaseMusic运行成功")
+                        Tools.showToastOnLooper(neteaseContext!!, "本地代理运行成功")
                     ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
                     LogUtils.i("ScriptHelper: 脚本启动成功！HTTP Server running")
                 } else if (line == "Killed ") {
@@ -284,5 +286,84 @@ object ScriptHelper {
         }
 
         return sslContext?.socketFactory
+    }
+
+    /**
+     * 当前代理目标：本地模式 127.0.0.1，服务器模式取配置地址
+     */
+    private fun proxyTarget(): Pair<String, Int> {
+        val setting = SettingHelper.getInstance()
+        val host = if (setting.getSetting(SettingHelper.proxy_server_key))
+            setting.getHttpProxy() else "127.0.0.1"
+        return host to setting.getProxyPort()
+    }
+
+    /**
+     * 探测代理 TCP 连通性（用于判断当前模式代理是否可用）
+     */
+    @JvmStatic
+    fun isProxyReachable(): Boolean {
+        return try {
+            val (host, port) = proxyTarget()
+            Socket().use { it.connect(InetSocketAddress(host, port), 800) }
+            LogUtils.d("ScriptHelper: 代理可达 host=$host port=$port")
+            true
+        } catch (e: Exception) {
+            LogUtils.w("ScriptHelper: 代理不可达 - ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 网易云启动后主动检查当前模式代理是否可用（供 ProxyHook 启动线程调用）
+     * - 服务器模式：探测配置服务器连通性，可达才置成功状态并提示；不可达提示检查地址
+     * - 本地模式：轮询等待脚本端口就绪（就绪已在 startScript 内提示成功），超时自动重启一次
+     */
+    @JvmStatic
+    fun waitAndCheckProxy(context: Context) {
+        val isServer = SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)
+        // 服务器需留出网络就绪时间；本地脚本启动较慢，轮询更久（端口一通立即返回）
+        val maxAttempts = if (isServer) 12 else 24
+        val stepMs = if (isServer) 400 else 500
+        var reachable = false
+        repeat(maxAttempts) {
+            if (isProxyReachable()) {
+                reachable = true
+                return@repeat
+            }
+            Thread.sleep(stepMs.toLong())
+        }
+        if (reachable) {
+            if (isServer) {
+                // 服务器可达才判定成功并置状态，提示仅此一次
+                ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
+                Tools.showToastOnLooper(context, "服务器代理运行成功")
+                LogUtils.i("ScriptHelper: 服务器代理可用")
+            } else {
+                // 本地模式成功提示已由 startScript 输出 HTTP Server running 时给出
+                LogUtils.i("ScriptHelper: 本地代理可用")
+            }
+            return
+        }
+        if (isServer) {
+            ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
+            Tools.showToastOnLooper(context, "服务器代理不可用")
+            LogUtils.w("ScriptHelper: 服务器代理不可达，已置状态为不可用")
+        } else {
+            // 本地脚本未就绪：尝试自动重启一次
+            LogUtils.w("ScriptHelper: 本地代理未就绪，尝试自动重启")
+            Tools.showToastOnLooper(context, "本地代理启动失败，正在自动重试")
+            stopScript()
+            startScript()
+            Thread.sleep(5000)
+            if (isProxyReachable()) {
+                ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
+                Tools.showToastOnLooper(context, "本地代理运行成功")
+                LogUtils.i("ScriptHelper: 本地代理自动重启成功")
+            } else {
+                Tools.showToastOnLooper(context, "本地代理启动失败")
+                LogUtils.e("ScriptHelper: 本地代理重试后仍不可用")
+            }
+        }
     }
 }

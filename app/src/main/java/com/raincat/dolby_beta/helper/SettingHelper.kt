@@ -93,6 +93,10 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val beauty_key = "β_beauty_key"
         @JvmField val beauty_title = "美化设置"
 
+        @JvmField val beauty_follow_dark_key = "β_beauty_follow_dark_key"
+        @JvmField val beauty_follow_dark_title = "深色模式跟随系统"
+        @JvmField val beauty_follow_dark_sub = "设置界面是否跟随系统深色模式，关闭后固定浅色主题（重新打开设置生效）"
+
         @JvmField val beauty_tab_hide_key = "β_beauty_tab_hide_key"
         @JvmField val beauty_tab_hide_title = "精简Tab"
         @JvmField val beauty_tab_hide_sub = "首页仅保留\"我的\"与\"发现\"，并默认显示\"我的\""
@@ -135,7 +139,8 @@ class SettingHelper private constructor(context: Context) {
         settingMap[proxy_flac_key] = sharedPreferences.getBoolean(proxy_flac_key, false)
         settingMap[proxy_gray_key] = sharedPreferences.getBoolean(proxy_gray_key, false)
 
-        // 美化设置
+        // 美化设置（深色跟随系统默认启用，保持与升级前一致）
+        settingMap[beauty_follow_dark_key] = sharedPreferences.getBoolean(beauty_follow_dark_key, true)
         settingMap[beauty_tab_hide_key] = sharedPreferences.getBoolean(beauty_tab_hide_key, false)
     }
 
@@ -158,6 +163,7 @@ class SettingHelper private constructor(context: Context) {
     }
 
     fun resetSetting() {
+        // 布尔开关
         deleteSetting(master_key)
         deleteSetting(dex_key)
         deleteSetting(proxy_master_key)
@@ -165,7 +171,29 @@ class SettingHelper private constructor(context: Context) {
         deleteSetting(proxy_priority_key)
         deleteSetting(proxy_flac_key)
         deleteSetting(proxy_gray_key)
+        deleteSetting(beauty_follow_dark_key)
         deleteSetting(beauty_tab_hide_key)
+        // 输入类配置（代理服务器/端口/Cookie/音源顺序）
+        deleteSetting(http_proxy_key)
+        deleteSetting(proxy_port_key)
+        deleteSetting(qq_cookie_key)
+        deleteSetting(migu_cookie_key)
+        deleteSetting(proxy_original_key)
+        // 旧版遗留的无引用配置（当前代码不读写，一并清除还原纯净）
+        deleteSetting("β_proxy_mode_key")
+        deleteSetting("β_proxy_gd_studio_key")
+
+        // 重建内存缓存为默认值：删除不更新 settingMap，同进程内读取会命中旧缓存
+        settingMap.clear()
+        settingMap[master_key] = true
+        settingMap[dex_key] = true
+        settingMap[proxy_master_key] = true
+        settingMap[proxy_server_key] = false
+        settingMap[proxy_priority_key] = false
+        settingMap[proxy_flac_key] = false
+        settingMap[proxy_gray_key] = false
+        settingMap[beauty_follow_dark_key] = true
+        settingMap[beauty_tab_hide_key] = false
     }
 
     // ==================== 音源代理相关 ====================

@@ -80,3 +80,29 @@
 #     public static int d(...);
 #     public static int v(...);
 # }
+
+# ============================================================
+# Jetpack Compose / Material 3 保留规则（设置界面）
+# ============================================================
+
+# 保留 SettingsScreenKt（SettingHook 通过 SettingsScreenKt.showSettingsDialog 调用）
+-keep class com.raincat.dolby_beta.ui.SettingsScreenKt {
+    public *;
+}
+
+# 保留 ComposeView（运行时反射实例化，被 ComponentDialog.setContentView 使用）
+-keep class androidx.compose.ui.platform.ComposeView { *; }
+
+# 保留 ComponentDialog（运行时反射实例化）
+-keep class androidx.activity.ComponentDialog { *; }
+
+# 保留 Compose runtime 核心（避免 R8 移除 Composable 函数）
+-keep class androidx.compose.runtime.** { *; }
+-keep class androidx.compose.material3.** { *; }
+-keep class androidx.compose.material.** { *; }
+-keep class androidx.compose.ui.** { *; }
+-keep class androidx.compose.foundation.** { *; }
+
+# 保留 Kotlin metadata（Compose 编译器依赖 Kotlin metadata 反射）
+-keep class kotlin.Metadata { *; }
+-keepattributes *Annotation*,RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,Signature,InnerClasses,EnclosingMethod

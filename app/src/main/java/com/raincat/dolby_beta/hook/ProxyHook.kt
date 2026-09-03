@@ -167,10 +167,12 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                 Thread {
                     ScriptHelper.initScript(context, false)
                     if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) {
-                        ScriptHelper.startHttpProxyMode(context)
+                        ScriptHelper.startHttpProxyMode()
                     } else {
                         ScriptHelper.startScript()
                     }
+                    // 启动后主动检查当前模式代理是否可用，失败自动重试并提示
+                    ScriptHelper.waitAndCheckProxy(context)
                 }.start()
             }
         }
