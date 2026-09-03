@@ -32,6 +32,12 @@ import java.net.URL
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.LinkedHashMap
+import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.regex.Pattern
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -499,8 +505,11 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
         context: Context, path: String, original: String,
         paramsMap: LinkedHashMap<String, String>
     ): String? {
-        val proxyActive = SettingHelper.getInstance().isEnable(SettingHelper.proxy_master_key)
-                && "1" == ExtraHelper.getExtraDate(ExtraHelper.SCRIPT_STATUS)
+        val setting = SettingHelper.getInstance()
+        val gdActive = setting.getSetting(SettingHelper.proxy_gd_studio_key)
+        // GD Studio 直连在线 API，不依赖本地脚本/服务器可用状态；本地与服务器模式需 SCRIPT_STATUS=1
+        val proxyActive = setting.isEnable(SettingHelper.proxy_master_key)
+                && (gdActive || "1" == ExtraHelper.getExtraDate(ExtraHelper.SCRIPT_STATUS))
 
         if (path.contains("song/enhance/player/url")) {
             val modified = EAPIHelper.modifyPlayer(original)
@@ -589,20 +598,33 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                 LogUtils.w("EAPIHook: 解析请求参数失败 - ${e.message}")
             }
 
-            val proxyResponse = requestProxyForSongUrl(context, ids, level, encodeType) ?: return modified
+            // 明确当前生效的代理模式，用于日志区分
+            val setting = SettingHelper.getInstance()
+            val modeTag = when {
+                setting.getSetting(SettingHelper.proxy_gd_studio_key) -> "GD Studio"
+                setting.getSetting(SettingHelper.proxy_server_key) -> "服务器代理"
+                else -> "本地代理"
+            }
+            LogUtils.i("EAPIHook: [$modeTag] 开始音源替换 path=$path ids=$ids level=$level")
+
+            val proxyResponse = requestProxyForSongUrl(context, ids, level, encodeType) ?: run {
+                LogUtils.w("EAPIHook: [$modeTag] 请求替换音源失败 ids=$ids")
+                return modified
+            }
 
             // 解析代理响应并合并
             val proxyJson = JSONObject(proxyResponse)
             // 检查代理返回的code是否为200
             if (proxyJson.optInt("code") != 200) {
-                LogUtils.w("EAPIHook: 代理返回code=${proxyJson.optInt("code")}，替换失败")
+                LogUtils.w("EAPIHook: [$modeTag] 返回code=${proxyJson.optInt("code")}，替换失败")
                 return modified
             }
             val proxyDataArray = proxyJson.optJSONArray("data") ?: run {
-                LogUtils.w("EAPIHook: 代理返回data为null")
+                LogUtils.w("EAPIHook: [$modeTag] 返回data为null")
                 return modified
             }
 
+            var replacedCount = 0
             for (i in 0 until proxyDataArray.length()) {
                 val proxySong = proxyDataArray.optJSONObject(i) ?: continue
                 val proxySongId = proxySong.optLong("id", 0)
@@ -618,7 +640,8 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                 if (dataArray.length() == 0) {
                     proxySong.put("code", 200)
                     dataArray.put(proxySong)
-                    LogUtils.d("EAPIHook: 歌曲ID=$proxySongId 代理添加成功（响应原为空）")
+                    replacedCount++
+                    LogUtils.d("EAPIHook: [$modeTag] 歌曲ID=$proxySongId 添加成功（响应原为空）")
                     continue
                 }
 
@@ -639,10 +662,14 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                         if (proxySong.has("level")) songObj.put("level", proxySong.optString("level"))
                         if (proxySong.has("encodeType")) songObj.put("encodeType", proxySong.optString("encodeType"))
                         dataArray.put(j, songObj)
-                        LogUtils.d("EAPIHook: 歌曲ID=$proxySongId 代理替换成功")
+                        replacedCount++
+                        LogUtils.d("EAPIHook: [$modeTag] 歌曲ID=$proxySongId 替换成功")
                         break
                     }
                 }
+            }
+            if (replacedCount > 0) {
+                LogUtils.i("EAPIHook: [$modeTag] 音源替换成功，共 $replacedCount 首 ids=$ids")
             }
             responseJson.put("data", dataArray)
             return responseJson.toString()
@@ -722,6 +749,10 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
      * 通过代理服务器请求替换音源
      */
     private fun requestProxyForSongUrl(context: Context, ids: String, level: String, encodeType: String): String? {
+        // GD Studio 在线音源模式：不走本地/服务器代理，改用其 REST API 获取替换链接
+        if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) {
+            return requestGdStudioForSongUrl(ids, level)
+        }
         try {
             val proxyHost = if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key))
                 SettingHelper.getInstance().getHttpProxy() else "127.0.0.1"
@@ -773,6 +804,228 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
         } catch (e: Exception) {
             LogUtils.e("EAPIHook: 代理请求异常 - ${e.javaClass.simpleName}: ${e.message}")
             return null
+        }
+    }
+
+    // ==================== GD Studio 在线音源 ====================
+
+    /** 网易云歌曲详情缓存：id -> (歌名, 歌手)，避免对同一歌曲重复请求 */
+    private val songDetailCache = ConcurrentHashMap<Long, Pair<String, String>>()
+    private val songDetailCacheLock = Any()
+
+    /** GD Studio 搜索结果缓存：source|歌名 歌手 -> trackId */
+    private val gdSearchCache = ConcurrentHashMap<String, String>()
+
+    /** GD Studio 请求线程池（并发逐首获取，避免串行拖慢播放） */
+    private val gdThreadPool = Executors.newFixedThreadPool(4)
+
+    /** GD Studio 请求 UA（实测支持浏览器与 NeteaseMusic UA） */
+    private val neteaseUA = "NeteaseMusic/8.10.05"
+
+    /** 将网易云音质 level 映射为 GD Studio 支持的码率（128/192/320/740/999） */
+    private fun gdBrByLevel(level: String, flac: Boolean): Int {
+        return when (level) {
+            "standard" -> 128
+            "higher" -> 192
+            "exhigh" -> 320
+            "lossless", "hires" -> if (flac) 999 else 320
+            "jymaster" -> 999
+            else -> 320
+        }
+    }
+
+    /**
+     * GD Studio 在线音源替换入口
+     * ids: 待替换的网易云歌曲ID（逗号分隔，格式 id_0）
+     * 流程（每首）：网易云公开详情拿歌名/歌手 → GD Studio 目标源搜索首个 track_id → 获取可播链接
+     * 返回结构复用代理合并逻辑：{"code":200,"data":[{id:网易云id,url,...}]}
+     */
+    private fun requestGdStudioForSongUrl(ids: String, level: String): String? {
+        try {
+            val setting = SettingHelper.getInstance()
+            // 支持多音源：空格分隔（如 "joox kuwo"），按顺序回退取第一个可用源
+            val sources = setting.getGdSource().ifEmpty { SettingHelper.proxy_gd_source_default }
+                .split(' ').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (sources.isEmpty()) return null
+            val flac = setting.getSetting(SettingHelper.proxy_flac_key)
+            val br = gdBrByLevel(level, flac)
+            LogUtils.d("EAPIHook: GD Studio 请求 ids=$ids sources=$sources br=$br")
+
+            val neteaseIds = ids.split(",").mapNotNull { raw ->
+                raw.trim().substringBefore('_').trim().toLongOrNull()
+            }.distinct()
+            if (neteaseIds.isEmpty()) return null
+
+            // 并发获取每首歌的替换链接，主线程等待总超时后放弃
+            val futures = neteaseIds.map { neteaseId ->
+                gdThreadPool.submit(Callable<JSONObject?> {
+                    try {
+                        fetchGdSongUrl(neteaseId, sources, br)
+                    } catch (t: Throwable) {
+                        LogUtils.w("EAPIHook: GD Studio 获取歌曲失败 id=$neteaseId - ${t.message}")
+                        null
+                    }
+                })
+            }
+
+            val data = JSONArray()
+            val timeoutMs = 7000L
+            futures.forEach { future ->
+                val song = try {
+                    future.get(timeoutMs, TimeUnit.MILLISECONDS)
+                } catch (e: TimeoutException) {
+                    LogUtils.w("EAPIHook: GD Studio 请求超时")
+                    null
+                } catch (e: Exception) {
+                    LogUtils.w("EAPIHook: GD Studio 请求异常 - ${e.message}")
+                    null
+                }
+                if (song != null) data.put(song)
+            }
+            if (data.length() == 0) {
+                LogUtils.w("EAPIHook: GD Studio 未获取到任何替换音源")
+                return null
+            }
+            val result = JSONObject()
+            result.put("code", 200)
+            result.put("data", data)
+            return result.toString()
+        } catch (e: Exception) {
+            LogUtils.e("EAPIHook: GD Studio 请求异常 - ${e.message}")
+            return null
+        }
+    }
+
+    /**
+     * 获取单首网易云歌曲在 GD Studio 指定源列表下的可播链接
+     * 按配置顺序逐个尝试各音源，第一个成功取到链接的源生效，全部失败返回 null
+     */
+    private fun fetchGdSongUrl(neteaseId: Long, sources: List<String>, br: Int): JSONObject? {
+        // 1. 拿网易云歌曲的歌名/歌手（缓存 + 公开详情接口）
+        val (name, artist) = getSongDetail(neteaseId) ?: run {
+            LogUtils.w("EAPIHook: GD Studio 无法获取歌曲详情 id=$neteaseId")
+            return null
+        }
+        for (source in sources) {
+            // 2. 在当前源搜索并取首个结果 track_id
+            val trackId = gdSearchTrackId(source, artist, name)
+            if (trackId == null) {
+                LogUtils.w("EAPIHook: GD Studio 搜索无结果 source=$source query=$artist $name")
+                continue
+            }
+            // 3. 获取可播链接；高音质拿不到时降级到 320 再试一次
+            var actualBr = br
+            var url = gdFetchUrl(source, trackId, br)
+            if (url.isNullOrEmpty() && br > 320) {
+                actualBr = 320
+                url = gdFetchUrl(source, trackId, 320)
+            }
+            if (url.isNullOrEmpty()) {
+                LogUtils.w("EAPIHook: GD Studio 获取链接为空 source=$source id=$trackId br=$br")
+                continue
+            }
+            LogUtils.i("EAPIHook: GD Studio 音源命中 source=$source id=$neteaseId br=$actualBr")
+            val song = JSONObject()
+            song.put("id", neteaseId)   // 与响应合并时按网易云 id 匹配
+            song.put("url", url)
+            song.put("br", actualBr)
+            return song
+        }
+        return null
+    }
+
+    /** 查询网易云歌曲标题/歌手：先查内存缓存，未命中再请求公开详情接口 */
+    private fun getSongDetail(neteaseId: Long): Pair<String, String>? {
+        songDetailCache[neteaseId]?.let { return it }
+        synchronized(songDetailCacheLock) {
+            songDetailCache[neteaseId]?.let { return it }
+            try {
+                val c = "[{\"id\":$neteaseId}]"
+                val urlStr = "https://music.163.com/api/v3/song/detail?c=${URLEncoder.encode(c, "UTF-8")}"
+                val json = httpGetJson(urlStr, neteaseUA) ?: return null
+                val songs = JSONObject(json).optJSONArray("songs") ?: return null
+                if (songs.length() == 0) return null
+                val song = songs.getJSONObject(0)
+                val name = song.optString("name", "")
+                val ars = song.optJSONArray("ar")
+                val artist = if (ars != null && ars.length() > 0) {
+                    (0 until ars.length()).joinToString("/") {
+                        ars.optJSONObject(it)?.optString("name", "") ?: ""
+                    }
+                } else ""
+                if (name.isEmpty()) return null
+                val info = name to artist
+                if (songDetailCache.size > 500) songDetailCache.clear()
+                songDetailCache[neteaseId] = info
+                return info
+            } catch (e: Exception) {
+                LogUtils.w("EAPIHook: GD Studio 获取网易云详情失败 id=$neteaseId - ${e.message}")
+                return null
+            }
+        }
+    }
+
+    /** GD Studio 搜索，返回第一个结果的 track_id（结果缓存避免重复请求） */
+    private fun gdSearchTrackId(source: String, artist: String, name: String): String? {
+        val query = if (artist.isNotEmpty()) "$artist $name" else name
+        val cacheKey = "$source|$query"
+        gdSearchCache[cacheKey]?.let { return it }
+        try {
+            val urlStr = "${SettingHelper.proxy_gd_api}?types=search&source=$source" +
+                    "&name=${URLEncoder.encode(query, "UTF-8")}&count=5"
+            val json = httpGetJson(urlStr, neteaseUA) ?: return null
+            // 搜索接口返回 JSON 数组
+            val arr = JSONArray(json)
+            if (arr.length() == 0) return null
+            val id = arr.getJSONObject(0).optString("id", "").ifEmpty { return null }
+            if (gdSearchCache.size > 200) gdSearchCache.clear()
+            gdSearchCache[cacheKey] = id
+            return id
+        } catch (e: Exception) {
+            LogUtils.w("EAPIHook: GD Studio 搜索失败 - ${e.message}")
+            return null
+        }
+    }
+
+    /** GD Studio 获取播放链接 */
+    private fun gdFetchUrl(source: String, trackId: String, br: Int): String? {
+        try {
+            val urlStr = "${SettingHelper.proxy_gd_api}?types=url&source=$source" +
+                    "&id=${URLEncoder.encode(trackId, "UTF-8")}&br=$br"
+            val json = httpGetJson(urlStr, neteaseUA) ?: return null
+            val obj = JSONObject(json)
+            return obj.optString("url", "").ifEmpty { null }
+        } catch (e: Exception) {
+            LogUtils.w("EAPIHook: GD Studio 获取链接失败 - ${e.message}")
+            return null
+        }
+    }
+
+    /** 通用 HTTPS GET 请求（信任所有证书，直连公网），返回响应体字符串 */
+    private fun httpGetJson(urlStr: String, ua: String): String? {
+        var conn: javax.net.ssl.HttpsURLConnection? = null
+        try {
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, arrayOf(HTTPSTrustManager()), java.security.SecureRandom())
+            val url = URL(urlStr)
+            conn = url.openConnection() as javax.net.ssl.HttpsURLConnection
+            conn.sslSocketFactory = sslContext.socketFactory
+            conn.hostnameVerifier = HostnameVerifier { _, _ -> true }
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 4000
+            conn.readTimeout = 4000
+            conn.setRequestProperty("User-Agent", ua)
+            conn.setRequestProperty("Accept", "application/json")
+            if (conn.responseCode == 200) {
+                return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            }
+            LogUtils.w("EAPIHook: GD Studio HTTP ${conn.responseCode}")
+            return null
+        } catch (e: Exception) {
+            LogUtils.w("EAPIHook: GD Studio 请求异常 ${e.javaClass.simpleName}: ${e.message}")
+            return null
+        } finally {
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
     }
 

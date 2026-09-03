@@ -299,6 +299,60 @@ object ScriptHelper {
     }
 
     /**
+     * 探测 GD Studio 在线音源 API 是否可用（真实请求一次搜索接口）
+     * 成功返回 true；网络异常/非 200 返回 false
+     */
+    @JvmStatic
+    fun checkGdStudioAvailable(): Boolean {
+        return try {
+            val urlStr = SettingHelper.proxy_gd_api +
+                    "?types=search&source=${SettingHelper.proxy_gd_source_default}" +
+                    "&name=" + java.net.URLEncoder.encode("test", "UTF-8") + "&count=1"
+            val conn = java.net.URL(urlStr).openConnection() as javax.net.ssl.HttpsURLConnection
+            try {
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
+                conn.setRequestProperty("User-Agent", "NeteaseMusic/8.10.05")
+                conn.setRequestProperty("Accept", "application/json")
+                val code = conn.responseCode
+                if (code == 200) {
+                    LogUtils.i("ScriptHelper: GD Studio API 可用 (HTTP $code)")
+                    true
+                } else {
+                    LogUtils.w("ScriptHelper: GD Studio API 不可用 (HTTP $code)")
+                    false
+                }
+            } finally {
+                try { conn.disconnect() } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            LogUtils.w("ScriptHelper: GD Studio API 探测异常 - ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    /** 网易云启动后主动检查 GD Studio 在线音源可用性（供 ProxyHook 启动线程调用） */
+    @JvmStatic
+    fun waitAndCheckGdStudio(context: Context) {
+        // 首次进入可能网络未就绪，做几次短重试再定性
+        var ok = false
+        repeat(6) {
+            if (checkGdStudioAvailable()) { ok = true; return@repeat }
+            Thread.sleep(600)
+        }
+        if (ok) {
+            ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
+            Tools.showToastOnLooper(context, "GD Studio 在线音源可用")
+            LogUtils.i("ScriptHelper: GD Studio 模式可用")
+        } else {
+            ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
+            Tools.showToastOnLooper(context, "GD Studio 在线音源不可用，请检查网络")
+            LogUtils.e("ScriptHelper: GD Studio 模式不可用")
+        }
+    }
+
+    /**
      * 探测代理 TCP 连通性（用于判断当前模式代理是否可用）
      */
     @JvmStatic
