@@ -26,7 +26,7 @@ android {
         minSdk 26
         // AGP 8.x新语法：targetSdk替代targetSdkVersion
         targetSdk 34
-        versionCode 3544
+        versionCode 358
         versionName "3.5.4.zr4"
 
         ndk {

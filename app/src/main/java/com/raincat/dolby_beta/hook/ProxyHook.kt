@@ -198,7 +198,7 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
         try {
             val httpUrlHost = if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key))
                 SettingHelper.getInstance().getHttpProxy() else "127.0.0.1"
-            val proxyPort = SettingHelper.getInstance().getProxyPort()
+            val proxyPort = proxyConnectPort()
 
             if (socketFactory == null) {
                 socketFactory = ScriptHelper.getSSLSocketFactory(context)
@@ -255,11 +255,16 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
         }
     }
 
+    /** 当前模式代理连接端口：服务器模式用配置的服务器端口，本地模式用本地监听端口 */
+    private fun proxyConnectPort(): Int {
+        val s = SettingHelper.getInstance()
+        return if (s.getSetting(SettingHelper.proxy_server_key)) s.getProxyPort() else s.getProxyLocalPort()
+    }
+
     /**
      * 回退方案：直接修改共享OkHttpClient的SSL字段
      */
-    private fun setProxyFallback(context: Context, client: Any) {
-        try {
+    private fun setProxyFallback(context: Context, client: Any) {        try {
             val sslSocketFactoryField = try {
                 client.javaClass.getDeclaredField(fieldSSLSocketFactory)
             } catch (_: NoSuchFieldException) {
@@ -286,7 +291,7 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
 
             val httpUrlHost = if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key))
                 SettingHelper.getInstance().getHttpProxy() else "127.0.0.1"
-            val proxyPort = SettingHelper.getInstance().getProxyPort()
+            val proxyPort = proxyConnectPort()
             val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(httpUrlHost, proxyPort))
             proxyField.set(client, proxy)
 

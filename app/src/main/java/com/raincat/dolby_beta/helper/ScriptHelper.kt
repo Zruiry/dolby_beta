@@ -161,6 +161,7 @@ object ScriptHelper {
     @JvmStatic
     fun getScriptCommand(): String {
         val setting = SettingHelper.getInstance()
+        val localPort = setting.getProxyLocalPort()
         return String.format(
             "export ENABLE_FLAC=%s&&export MIN_BR=%s&&export QQ_COOKIE=\"%s\"&&export MIGU_COOKIE=\"%s\"&&libnode.so app.js -a 127.0.0.1 -o %s -p %s",
             setting.getSetting(SettingHelper.proxy_flac_key),
@@ -168,7 +169,7 @@ object ScriptHelper {
             setting.getQqCookie() ?: "",
             setting.getMiguCookie() ?: "",
             setting.getProxyOriginal() ?: "pyncmd kuwo",
-            "${setting.getProxyPort()}:${setting.getProxyPort() + 1}"
+            "$localPort:${localPort + 1}"
         )
     }
 
@@ -221,13 +222,16 @@ object ScriptHelper {
                     intent.putExtra("title", "脚本产生如下错误信息，若脚本因此无法运行请提issue")
                     neteaseContext?.sendBroadcast(intent)
                 } else if (line.contains("HTTP Server running")) {
-                    if (neteaseContext != null && ExtraHelper.getExtraDate(ExtraHelper.SCRIPT_STATUS) == "0")
-                        Tools.showToastOnLooper(neteaseContext!!, "本地代理运行成功")
-                    ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
-                    LogUtils.i("ScriptHelper: 脚本启动成功！HTTP Server running")
+                    // 仅本地模式仍生效时才提示/置状态：切换模式会 kill 旧脚本，其残留输出不得误报
+                    if (isLocalModeActive()) {
+                        if (neteaseContext != null && ExtraHelper.getExtraDate(ExtraHelper.SCRIPT_STATUS) == "0")
+                            Tools.showToastOnLooper(neteaseContext!!, "本地代理运行成功")
+                        ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
+                        LogUtils.i("ScriptHelper: 脚本启动成功！HTTP Server running")
+                    }
                 } else if (line == "Killed ") {
-                    // 脚本被kill后自动重启（与dev分支一致）
-                    if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_master_key))
+                    // 脚本被kill后自动重启（仅本地模式仍生效，切换模式时的主动停止不触发重启）
+                    if (isLocalModeActive())
                         startScript()
                 } else if (line == "RESTART") {
                     ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
@@ -289,13 +293,23 @@ object ScriptHelper {
     }
 
     /**
-     * 当前代理目标：本地模式 127.0.0.1，服务器模式取配置地址
+     * 当前代理目标：本地模式 127.0.0.1+本地监听端口，服务器模式取配置地址+服务器端口
      */
     private fun proxyTarget(): Pair<String, Int> {
         val setting = SettingHelper.getInstance()
-        val host = if (setting.getSetting(SettingHelper.proxy_server_key))
-            setting.getHttpProxy() else "127.0.0.1"
-        return host to setting.getProxyPort()
+        return if (setting.getSetting(SettingHelper.proxy_server_key)) {
+            setting.getHttpProxy() to setting.getProxyPort()
+        } else {
+            "127.0.0.1" to setting.getProxyLocalPort()
+        }
+    }
+
+    /** 本地代理是否为当前生效模式（供脚本异步回调判断，避免切走后误报） */
+    private fun isLocalModeActive(): Boolean {
+        val s = SettingHelper.getInstance()
+        return s.getSetting(SettingHelper.proxy_master_key) &&
+                !s.getSetting(SettingHelper.proxy_gd_studio_key) &&
+                !s.getSetting(SettingHelper.proxy_server_key)
     }
 
     /**
@@ -341,6 +355,8 @@ object ScriptHelper {
             if (checkGdStudioAvailable()) { ok = true; return@repeat }
             Thread.sleep(600)
         }
+        // 结果落定时若已切走模式则作废，避免陈旧结果误报
+        if (!SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) return
         if (ok) {
             ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
             Tools.showToastOnLooper(context, "GD Studio 在线音源可用")
@@ -389,7 +405,8 @@ object ScriptHelper {
         }
         if (reachable) {
             if (isServer) {
-                // 服务器可达才判定成功并置状态，提示仅此一次
+                // 服务器可达才判定成功并置状态，提示仅此一次（已切走则作废）
+                if (!SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) return
                 ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
                 Tools.showToastOnLooper(context, "服务器代理运行成功")
                 LogUtils.i("ScriptHelper: 服务器代理可用")
@@ -400,21 +417,23 @@ object ScriptHelper {
             return
         }
         if (isServer) {
+            if (!SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) return
             ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
             Tools.showToastOnLooper(context, "服务器代理不可用")
             LogUtils.w("ScriptHelper: 服务器代理不可达，已置状态为不可用")
         } else {
-            // 本地脚本未就绪：尝试自动重启一次
+            // 本地脚本未就绪：尝试自动重启一次（已切走则放弃）
+            if (!isLocalModeActive()) return
             LogUtils.w("ScriptHelper: 本地代理未就绪，尝试自动重启")
             Tools.showToastOnLooper(context, "本地代理启动失败，正在自动重试")
             stopScript()
             startScript()
             Thread.sleep(5000)
-            if (isProxyReachable()) {
+            if (isLocalModeActive() && isProxyReachable()) {
                 ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "1")
                 Tools.showToastOnLooper(context, "本地代理运行成功")
                 LogUtils.i("ScriptHelper: 本地代理自动重启成功")
-            } else {
+            } else if (isLocalModeActive()) {
                 Tools.showToastOnLooper(context, "本地代理启动失败")
                 LogUtils.e("ScriptHelper: 本地代理重试后仍不可用")
             }

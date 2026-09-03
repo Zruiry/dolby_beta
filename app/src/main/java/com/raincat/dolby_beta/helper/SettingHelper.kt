@@ -71,7 +71,11 @@ class SettingHelper private constructor(context: Context) {
 
         @JvmField val proxy_port_key = "β_proxy_port_key"
         @JvmField val proxy_port_title = "代理端口（1~65535）"
-        @JvmField val proxy_port_default = 23338
+        @JvmField val proxy_port_default = 52000
+
+        // 本地脚本监听端口（与服务器代理端口相互独立，脚本 -p 监听用）
+        @JvmField val proxy_local_port_key = "β_proxy_local_port_key"
+        @JvmField val proxy_local_port_default = 23338
 
         @JvmField val proxy_original_key = "β_proxy_original_key"
         @JvmField val proxy_original_title = "音源顺序（空格隔开）"
@@ -194,6 +198,7 @@ class SettingHelper private constructor(context: Context) {
         // 输入类配置（代理服务器/端口/Cookie/音源顺序/GD音源）
         deleteSetting(http_proxy_key)
         deleteSetting(proxy_port_key)
+        deleteSetting(proxy_local_port_key)
         deleteSetting(qq_cookie_key)
         deleteSetting(migu_cookie_key)
         deleteSetting(proxy_original_key)
@@ -222,6 +227,15 @@ class SettingHelper private constructor(context: Context) {
     fun setProxyPort(port: String?) {
         if (!port.isNullOrEmpty()) {
             sharedPreferences.edit().putInt(proxy_port_key, port.toInt()).apply()
+        }
+    }
+
+    /** 本地脚本监听端口（默认 23338，与服务器代理端口独立） */
+    fun getProxyLocalPort(): Int = sharedPreferences.getInt(proxy_local_port_key, proxy_local_port_default)
+
+    fun setProxyLocalPort(port: String?) {
+        if (!port.isNullOrEmpty()) {
+            sharedPreferences.edit().putInt(proxy_local_port_key, port.toInt()).apply()
         }
     }
 

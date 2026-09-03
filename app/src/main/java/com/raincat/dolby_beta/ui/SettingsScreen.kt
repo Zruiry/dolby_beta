@@ -563,19 +563,27 @@ private fun ProxyScreen(
     Spacer(modifier = Modifier.height(8.dp))
 }
 
-/** 按当前代理模式执行启动/停止动作（总开关与代理模式切换共用） */
+/** 按当前代理模式执行启动/停止动作（总开关与代理模式切换共用），实时生效 */
 private fun applyProxyMode(activity: Activity) {
     val setting = SettingHelper.getInstance()
     ScriptHelper.stopScript()
+    // 统一先复位状态，等待各自模式的就绪探测/脚本输出再置位
+    ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
     if (!setting.getSetting(SettingHelper.master_key)) return
-    if (setting.getSetting(SettingHelper.proxy_gd_studio_key)) {
-        // GD Studio 直连在线 API，无需本地脚本；后台探测在线音源可用性
-        ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-        Thread { ScriptHelper.waitAndCheckGdStudio(activity) }.start()
-    } else if (!setting.getSetting(SettingHelper.proxy_server_key)) {
-        // 本地脚本模式：释放并启动脚本
-        ScriptHelper.initScript(activity, false)
-        ScriptHelper.startScript()
+    when {
+        setting.getSetting(SettingHelper.proxy_gd_studio_key) -> {
+            // GD Studio：直连在线 API，后台探测在线音源可用性（成功才提示 GD Studio 在线音源可用）
+            Thread { ScriptHelper.waitAndCheckGdStudio(activity) }.start()
+        }
+        setting.getSetting(SettingHelper.proxy_server_key) -> {
+            // 服务器代理：无本地脚本，后台探测配置服务器连通性并提示成功/失败
+            Thread { ScriptHelper.waitAndCheckProxy(activity) }.start()
+        }
+        else -> {
+            // 本地代理：释放并启动脚本，就绪后由 startScript 提示本地代理运行成功
+            ScriptHelper.initScript(activity, false)
+            ScriptHelper.startScript()
+        }
     }
 }
 

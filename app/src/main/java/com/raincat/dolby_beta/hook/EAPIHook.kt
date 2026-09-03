@@ -754,9 +754,13 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             return requestGdStudioForSongUrl(ids, level)
         }
         try {
-            val proxyHost = if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key))
+            val isServerMode = SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)
+            val proxyHost = if (isServerMode)
                 SettingHelper.getInstance().getHttpProxy() else "127.0.0.1"
-            val proxyPort = SettingHelper.getInstance().getProxyPort()
+            val proxyPort = if (isServerMode)
+                SettingHelper.getInstance().getProxyPort()
+            else
+                SettingHelper.getInstance().getProxyLocalPort()
 
             LogUtils.d("EAPIHook: 代理请求 ids=$ids level=$level")
 
