@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -236,6 +237,9 @@ private fun SettingsRoot(
         }
     }
 
+    // 拦截返回键，逐级返回而非直接关闭
+    BackHandler { goBack() }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -310,6 +314,9 @@ private fun MainScreen(
     var dexEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.dex_key))
     }
+    var darkFollowEnabled by remember {
+        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.beauty_follow_dark_key))
+    }
     var showResetConfirm by remember { mutableStateOf(false) }
     val setMaster = { new: Boolean ->
         masterEnabled = new
@@ -320,12 +327,22 @@ private fun MainScreen(
         dexEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.dex_key, new)
     }
+    val setDarkFollow = { new: Boolean ->
+        darkFollowEnabled = new
+        SettingHelper.getInstance().setSetting(SettingHelper.beauty_follow_dark_key, new)
+    }
 
     SectionLabel("模块", colors)
     GroupCard(colors) {
         SwitchItem(SettingHelper.master_title, "模块总开关，关闭后所有功能不生效，需重启网易云", masterEnabled, setMaster, colors)
         CardDivider(colors)
         SwitchItem(SettingHelper.dex_title, SettingHelper.dex_sub, dexEnabled, setDex, colors)
+        CardDivider(colors)
+        SwitchItem(SettingHelper.beauty_follow_dark_title, SettingHelper.beauty_follow_dark_sub, darkFollowEnabled, setDarkFollow, colors)
+        CardDivider(colors)
+        ActionItem("重置模块", "模块出现问题可以尝试重置", colors) {
+            showResetConfirm = true
+        }
     }
 
     SectionLabel("功能", colors)
@@ -336,10 +353,6 @@ private fun MainScreen(
         CardDivider(colors)
         NavItem(SettingHelper.beauty_title, "界面美化设置", enabled = masterEnabled, colors = colors) {
             onNavigate(Screen.BEAUTY)
-        }
-        CardDivider(colors)
-        ActionItem("重置模块", "模块出现问题可以尝试重置", colors) {
-            showResetConfirm = true
         }
     }
 
@@ -374,6 +387,7 @@ private fun MainScreen(
                     // 主页面开关复位为默认值
                     masterEnabled = true
                     dexEnabled = true
+                    darkFollowEnabled = true
                     Toast.makeText(activity, "重置完成，手动重启网易云生效", Toast.LENGTH_SHORT).show()
                 }) {
                     Text("重置", fontSize = 13.sp, color = colors.switchTrackOn)
@@ -453,6 +467,9 @@ private fun ProxyScreen(
     var flacEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_flac_key))
     }
+    var gdFlacEnabled by remember {
+        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_flac_key))
+    }
     val setGray = { new: Boolean ->
         grayEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_gray_key, new)
@@ -464,6 +481,10 @@ private fun ProxyScreen(
     val setFlac = { new: Boolean ->
         flacEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_flac_key, new)
+    }
+    val setGdFlac = { new: Boolean ->
+        gdFlacEnabled = new
+        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gd_flac_key, new)
     }
 
     SectionLabel("代理设置", colors)
@@ -526,8 +547,8 @@ private fun ProxyScreen(
                 onNavigate(Screen.GD_CONFIG)
             }
             CardDivider(colors)
-            SwitchItem(SettingHelper.proxy_flac_title, SettingHelper.proxy_flac_sub,
-                flacEnabled, setFlac, colors)
+            SwitchItem(SettingHelper.proxy_gd_flac_title, SettingHelper.proxy_gd_flac_sub,
+                gdFlacEnabled, setGdFlac, colors)
         }
     } else if (masterEnabled && serverMode) {
         SectionLabel("服务器代理配置", colors)
@@ -774,15 +795,8 @@ private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
         onBack = onBack,
     )
 
-    var darkFollowEnabled by remember {
-        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.beauty_follow_dark_key))
-    }
     var tabHideEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.beauty_tab_hide_key))
-    }
-    val setDarkFollow = { new: Boolean ->
-        darkFollowEnabled = new
-        SettingHelper.getInstance().setSetting(SettingHelper.beauty_follow_dark_key, new)
     }
     val setTabHide = { new: Boolean ->
         tabHideEnabled = new
@@ -791,14 +805,6 @@ private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
 
     SectionLabel("美化", colors)
     GroupCard(colors) {
-        SwitchItem(
-            SettingHelper.beauty_follow_dark_title,
-            SettingHelper.beauty_follow_dark_sub,
-            darkFollowEnabled,
-            setDarkFollow,
-            colors,
-        )
-        CardDivider(colors)
         SwitchItem(
             SettingHelper.beauty_tab_hide_title,
             SettingHelper.beauty_tab_hide_sub,

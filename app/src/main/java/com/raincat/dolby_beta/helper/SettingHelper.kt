@@ -105,6 +105,10 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val proxy_gd_source_title = "替换音源"
         @JvmField val proxy_gd_source_default = "joox"
 
+        @JvmField val proxy_gd_flac_key = "β_proxy_gd_flac_key"
+        @JvmField val proxy_gd_flac_title = "无损音质优先"
+        @JvmField val proxy_gd_flac_sub = "GD Studio 模式优先获取无损音质，但并不是100%能获取到无损音质"
+
         @JvmField val proxy_gd_configuration_key = "β_proxy_gd_configuration_key"
         @JvmField val proxy_gd_configuration_title = "API音源配置"
         @JvmField val proxy_gd_configuration_sub = "当前可稳定获取播放地址的音源为 joox，kuwo/tencent 等暂不可用"
@@ -159,6 +163,7 @@ class SettingHelper private constructor(context: Context) {
         settingMap[proxy_priority_key] = sharedPreferences.getBoolean(proxy_priority_key, false)
         settingMap[proxy_flac_key] = sharedPreferences.getBoolean(proxy_flac_key, false)
         settingMap[proxy_gray_key] = sharedPreferences.getBoolean(proxy_gray_key, false)
+        settingMap[proxy_gd_flac_key] = sharedPreferences.getBoolean(proxy_gd_flac_key, false)
 
         // 美化设置（深色跟随系统默认启用，保持与升级前一致）
         settingMap[beauty_follow_dark_key] = sharedPreferences.getBoolean(beauty_follow_dark_key, true)
@@ -193,6 +198,7 @@ class SettingHelper private constructor(context: Context) {
         deleteSetting(proxy_priority_key)
         deleteSetting(proxy_flac_key)
         deleteSetting(proxy_gray_key)
+        deleteSetting(proxy_gd_flac_key)
         deleteSetting(beauty_follow_dark_key)
         deleteSetting(beauty_tab_hide_key)
         // 输入类配置（代理服务器/端口/Cookie/音源顺序/GD音源）
@@ -216,6 +222,7 @@ class SettingHelper private constructor(context: Context) {
         settingMap[proxy_priority_key] = false
         settingMap[proxy_flac_key] = false
         settingMap[proxy_gray_key] = false
+        settingMap[proxy_gd_flac_key] = false
         settingMap[beauty_follow_dark_key] = true
         settingMap[beauty_tab_hide_key] = false
     }

@@ -851,7 +851,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             val sources = setting.getGdSource().ifEmpty { SettingHelper.proxy_gd_source_default }
                 .split(' ').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             if (sources.isEmpty()) return null
-            val flac = setting.getSetting(SettingHelper.proxy_flac_key)
+            val flac = setting.getSetting(SettingHelper.proxy_gd_flac_key)
             val br = gdBrByLevel(level, flac)
             LogUtils.d("EAPIHook: GD Studio 请求 ids=$ids sources=$sources br=$br")
 
