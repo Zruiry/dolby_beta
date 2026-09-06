@@ -200,7 +200,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
     init {
         isHooked = hookNewVersion(appContext)
         if (!isHooked) {
-            isHooked = hookOldVersion(appContext)
+            isHooked = hookOldVersion()
         }
     }
 
@@ -262,7 +262,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                                     LinkedHashMap<String, String>()
                                 }
                                 // processEapiResponse会执行modifyPlayer和replaceEmptyUrlWithProxy
-                                val modified = processEapiResponse(context, urlPath, emptyData, paramsMap)
+                                val modified = processEapiResponse(urlPath, emptyData, paramsMap)
                                 val finalContent = modified ?: emptyData
                                 val errorResponse = buildErrorResponse(chain, finalContent)
                                 if (errorResponse != null) return errorResponse
@@ -346,7 +346,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                         val request = callMethod(chainObj, "request")!!
                         val paramsMap = EApiHookHelper.getRequestParams(request)
 
-                        val modified = processEapiResponse(context, urlPath, original, paramsMap)
+                        val modified = processEapiResponse(urlPath, original, paramsMap)
 
                         // body已被readResponseBodyString消费，必须重建response
                         val finalContent = modified ?: original
@@ -410,9 +410,9 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
 
         var newResponse = callMethod(response, "newBuilder")!!
         val bodyMethod = newResponse.javaClass.getDeclaredMethod("body", responseBodyClass)
-        newResponse = bodyMethod.invoke(newResponse, newBody)
+        newResponse = bodyMethod.invoke(newResponse, newBody)!!
         val headerMethod = newResponse.javaClass.getDeclaredMethod("header", String::class.java, String::class.java)
-        newResponse = headerMethod.invoke(newResponse, "Content-Length", content.length.toString())
+        newResponse = headerMethod.invoke(newResponse, "Content-Length", content.length.toString())!!
         newResponse = callMethod(newResponse, "build")!!
         return newResponse
     }
@@ -475,8 +475,8 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
 
     // ==================== 旧版hook方式 ====================
 
-    private fun hookOldVersion(context: Context): Boolean {
-        val resultMethod = ClassHelper.HttpResponse.getResultMethod(context)
+    private fun hookOldVersion(): Boolean {
+        val resultMethod = ClassHelper.HttpResponse.getResultMethod()
         if (resultMethod == null) {
             LogUtils.w("EAPIHook: getResultMethod返回null，跳过hook")
             return false
@@ -493,13 +493,13 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
 
                 val thisObject = chain.thisObject
                 val httpResponse = ClassHelper.HttpResponse(thisObject)
-                val eapi = httpResponse.getEapi(context)
-                val uri = ClassHelper.HttpUrl.getUri(context, eapi)
+                val eapi = httpResponse.getEapi()
+                val uri = ClassHelper.HttpUrl.getUri(eapi)
                 if (!uri.path?.contains("/eapi/")!!) return result
                 val path = uri.path!!
 
-                val paramsMap = ClassHelper.HttpParams.getParams(context, eapi)
-                val modified = processEapiResponse(context, path, original, paramsMap)
+                val paramsMap = ClassHelper.HttpParams.getParams(eapi)
+                val modified = processEapiResponse(path, original, paramsMap)
 
                 if (modified != null) {
                     return if (result is JSONObject) JSONObject(modified) else modified
@@ -516,7 +516,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
      * 处理EAPI响应内容，根据请求路径进行不同的修改
      */
     private fun processEapiResponse(
-        context: Context, path: String, original: String,
+        path: String, original: String,
         paramsMap: LinkedHashMap<String, String>
     ): String? {
         val setting = SettingHelper.getInstance()
@@ -532,9 +532,9 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             // - VIP歌曲（fee>0，有试听URL）：modifyPlayer对VIP也返回modified（fee改为0），但仍需通过代理获取完整播放URL
             // - 响应数据为空（如cronet异常）：通过代理获取全部替换音源
             if (proxyActive) {
-                return replaceEmptyUrlWithProxy(context, modified ?: original, paramsMap, path)
+                return replaceEmptyUrlWithProxy(modified ?: original, paramsMap, path)
             }
-            return modified ?: null
+            return modified
         } else if (path.contains("song/enhance/download/url")) {
             val jsonObject = JSONObject(original)
             val obj = jsonObject.getJSONObject("data")
@@ -544,13 +544,13 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             if (modified != null) {
                 val result = modified.replace("[", "").replace("]", "")
                 if (proxyActive) {
-                    return replaceEmptyUrlWithProxy(context, result, paramsMap, path)
+                    return replaceEmptyUrlWithProxy(result, paramsMap, path)
                 }
                 return result
             }
             return null
         } else if (path.contains("batch")) {
-            return processBatchResponse(context, original)
+            return processBatchResponse(original)
         }
         return null
     }
@@ -560,7 +560,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
      * 当响应数据为空（如cronet异常）时，从请求参数中提取歌曲ID，通过代理获取全部替换音源
      */
     private fun replaceEmptyUrlWithProxy(
-        context: Context, modified: String,
+        modified: String,
         paramsMap: LinkedHashMap<String, String>, path: String
     ): String {
         try {
@@ -603,7 +603,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                 val paramsStr = paramsMap["params"]
                 if (paramsStr != null) {
                     val paramsJson = EAPIHelper.decrypt(paramsStr)
-                    if (paramsJson != null && paramsJson.length() > 0) {
+                    if (paramsJson.length() > 0) {
                         level = paramsJson.optString("level", level)
                         encodeType = paramsJson.optString("encodeType", encodeType)
                     }
@@ -621,7 +621,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             }
             LogUtils.i("EAPIHook: [$modeTag] 开始音源替换 path=$path ids=$ids level=$level")
 
-            val proxyResponse = requestProxyForSongUrl(context, ids, level, encodeType) ?: run {
+            val proxyResponse = requestProxyForSongUrl(ids, level, encodeType) ?: run {
                 LogUtils.w("EAPIHook: [$modeTag] 请求替换音源失败 ids=$ids")
                 return modified
             }
@@ -709,7 +709,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
         try {
             val paramsStr = paramsMap["params"] ?: return result
             val paramsJson = EAPIHelper.decrypt(paramsStr)
-            if (paramsJson == null || paramsJson.length() == 0) return result
+            if (paramsJson.length() == 0) return result
 
             // 尝试从ids字段提取（格式为["123456_0","789012_0"]）
             val idsStr = paramsJson.optString("ids", "")
@@ -762,7 +762,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
     /**
      * 通过代理服务器请求替换音源
      */
-    private fun requestProxyForSongUrl(context: Context, ids: String, level: String, encodeType: String): String? {
+    private fun requestProxyForSongUrl(ids: String, level: String, encodeType: String): String? {
         // GD Studio 在线音源模式：不走本地/服务器代理，改用其 REST API 获取替换链接
         if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) {
             return requestGdStudioForSongUrl(ids, level)
@@ -835,7 +835,9 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
     private val gdSearchCache = ConcurrentHashMap<String, String>()
 
     /** GD Studio 请求线程池（并发逐首获取，避免串行拖慢播放） */
-    private val gdThreadPool = Executors.newFixedThreadPool(4)
+    private val gdThreadPool = Executors.newFixedThreadPool(4) { r ->
+        Thread(r, "EAPIHook-GD").apply { isDaemon = true }
+    }
 
     /** GD Studio 请求 UA（实测支持浏览器与 NeteaseMusic UA） */
     private val neteaseUA = "NeteaseMusic/8.10.05"
@@ -1075,7 +1077,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             val base64Part = afterPackage.substring(0, slashIndex)
 
             // Base64解码（注意：URL安全的Base64可能将+替换为-，/替换为_）
-            val decoded = android.util.Base64.decode(base64Part as String, android.util.Base64.DEFAULT)
+            val decoded = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
             val actualUrl = String(decoded, Charsets.UTF_8)
 
             // 验证解码结果是有效的URL
@@ -1095,7 +1097,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
     /**
      * 处理batch请求的响应
      */
-    private fun processBatchResponse(context: Context, original: String): String? {
+    private fun processBatchResponse(original: String): String? {
         if (original.contains("comment\\/banner\\/get")) {
             val jsonObject = JSONObject(original)
             if (!jsonObject.isNull("/api/content/exposure/comment/banner/get")) {
@@ -1187,7 +1189,7 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             val errorBody = callStaticMethod(responseBodyClass, "create", mediaType!!, content)
 
             val responseBuilderClass = appContext.classLoader.loadClass("okhttp3.Response\$Builder")
-            val responseBuilder = responseBuilderClass.newInstance()
+            val responseBuilder = responseBuilderClass.getDeclaredConstructor().newInstance()
             callMethod(responseBuilder, "request", request)
 
             // HTTP_1_1是okhttp3.Protocol的静态字段，不是方法

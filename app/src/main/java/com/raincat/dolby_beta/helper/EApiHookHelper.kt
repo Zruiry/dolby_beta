@@ -87,7 +87,7 @@ object EApiHookHelper {
                 field.isAccessible = true
                 val value = field.get(obj)
                 if (value is LinkedHashMap<*, *>) {
-                    val map = value as LinkedHashMap<*, *>
+                    val map = value
                     if (map.isNotEmpty()) {
                         val firstKey = map.keys.iterator().next()
                         if (firstKey is String) {

@@ -167,9 +167,9 @@ object ScriptHelper {
             "export ENABLE_FLAC=%s&&export MIN_BR=%s&&export QQ_COOKIE=\"%s\"&&export MIGU_COOKIE=\"%s\"&&libnode.so app.js -a 127.0.0.1 -o %s -p %s",
             setting.getSetting(SettingHelper.proxy_flac_key),
             if (setting.getSetting(SettingHelper.proxy_priority_key)) "256000" else "96000",
-            setting.getQqCookie() ?: "",
-            setting.getMiguCookie() ?: "",
-            setting.getProxyOriginal() ?: "pyncmd kuwo",
+            setting.getQqCookie(),
+            setting.getMiguCookie(),
+            setting.getProxyOriginal(),
             "$localPort:${localPort + 1}"
         )
     }
@@ -283,11 +283,11 @@ object ScriptHelper {
                     sslContext = SSLContext.getInstance("TLS")
                     sslContext.init(null, trustManagers, SecureRandom())
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    LogUtils.e("ScriptHelper: 使用HTTPSTrustManager初始化SSL失败 - ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            LogUtils.e("ScriptHelper: 获取CA证书SSLContext失败 - ${e.message}")
         }
 
         return sslContext?.socketFactory
@@ -354,9 +354,12 @@ object ScriptHelper {
     fun waitAndCheckGdStudio(context: Context) {
         var ok = false
         // 单次探测最长 2s，成功即返回；失败快速重试 2 次（覆盖启动初期网络未就绪），最坏约 6s
-        repeat(3) {
-            if (checkGdStudioAvailable()) { ok = true; return@repeat }
-            Thread.sleep(300)
+        for (attempt in 1..3) {
+            if (checkGdStudioAvailable()) {
+                ok = true
+                break
+            }
+            if (attempt < 3) Thread.sleep(300)
         }
         // 结果落定时若已切走模式则作废，避免陈旧结果误报
         if (!SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) return
@@ -399,12 +402,12 @@ object ScriptHelper {
         val maxAttempts = if (isServer) 12 else 24
         val stepMs = if (isServer) 400 else 500
         var reachable = false
-        repeat(maxAttempts) {
+        for (attempt in 1..maxAttempts) {
             if (isProxyReachable()) {
                 reachable = true
-                return@repeat
+                break
             }
-            Thread.sleep(stepMs.toLong())
+            if (attempt < maxAttempts) Thread.sleep(stepMs.toLong())
         }
         if (reachable) {
             if (isServer) {

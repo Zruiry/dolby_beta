@@ -42,7 +42,13 @@ class Hook(
 
     init {
         try {
-            val versionCode = context.packageManager.getPackageInfo(PACKAGE_NAME, 0).versionCode
+            val packageInfo = context.packageManager.getPackageInfo(PACKAGE_NAME, 0)
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode
+            }
             ExtraHelper.init(context)
             SettingHelper.init(context)
 
@@ -91,11 +97,11 @@ class Hook(
             // 统一等待 DEX 扫描完成，避免多次调用 getCacheClassList
             ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                 override fun onGet() {
-                    SettingHook(module, context, versionCode)
+                    SettingHook(module, context)
 
                     if (SettingHelper.getInstance().getSetting(SettingHelper.master_key)) {
                         EAPIHook(module, context)
-                        CdnHook(module, context, versionCode)
+                        CdnHook(module, versionCode)
                         initFeatureHooks(module, context, versionCode)
                     }
                     LogUtils.i("Hook: 主进程[onCreate]初始化完成")
@@ -143,7 +149,7 @@ class Hook(
                                 ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                                     override fun onGet() {
                                         EAPIHook(module, context)
-                                        CdnHook(module, context, versionCode)
+                                        CdnHook(module, versionCode)
                                     }
                                 })
                             }
@@ -152,7 +158,7 @@ class Hook(
                 } else {
                     ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                         override fun onGet() {
-                            CdnHook(module, context, versionCode)
+                            CdnHook(module, versionCode)
                         }
                     })
                 }

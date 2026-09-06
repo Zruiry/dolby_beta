@@ -9,7 +9,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -72,9 +71,8 @@ import com.raincat.dolby_beta.BuildConfig
 import com.raincat.dolby_beta.helper.ExtraHelper
 import com.raincat.dolby_beta.helper.ScriptHelper
 import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.utils.LogUtils
 import com.raincat.dolby_beta.utils.Tools
-
-private const val TAG = "dolby_beta.SettingsScreen"
 
 /** 网易云品牌红（深浅色通用强调色） */
 private val NeteaseRed = Color(0xFFD33A31)
@@ -151,6 +149,7 @@ internal fun isDarkTheme(activity: Activity): Boolean {
 }
 
 /** 为宿主进程构造带模块 Resources 的 Context（Compose 库资源仅在模块 APK 内，宿主 Resources 无法解析） */
+@Suppress("DEPRECATION")
 private fun moduleResourceContext(base: Context): Context {
     return try {
         val modulePath = ScriptHelper.modulePath ?: return base
@@ -167,7 +166,7 @@ private fun moduleResourceContext(base: Context): Context {
             override fun getResources(): android.content.res.Resources = moduleRes
         }
     } catch (e: Throwable) {
-        Log.w(TAG, "创建模块资源 Context 失败: ${e.message}")
+        LogUtils.w("创建模块资源 Context 失败: ${e.message}")
         base
     }
 }
@@ -205,7 +204,7 @@ internal fun showSettingsDialog(
         try {
             onDismiss.run()
         } catch (e: Throwable) {
-            Log.w(TAG, "onDismiss 失败: ${e.message}")
+            LogUtils.w("onDismiss 失败: ${e.message}")
         }
     }
     dialog.show()
@@ -325,7 +324,7 @@ private fun SettingsRoot(
                             Screen.PROXY_CONFIG -> ProxyConfigScreen(colors) { screen = Screen.PROXY }
                             Screen.SCRIPT_CONFIG -> ScriptConfigScreen(colors) { screen = Screen.PROXY }
                             Screen.GD_CONFIG -> GdConfigScreen(colors) { screen = Screen.PROXY }
-                            Screen.BEAUTY -> BeautyScreen(colors, activity) { screen = Screen.MAIN }
+                            Screen.BEAUTY -> BeautyScreen(colors) { screen = Screen.MAIN }
                             else -> MainScreen(colors, activity) { screen = it }
                         }
                     }
@@ -634,11 +633,11 @@ private fun applyProxyMode(activity: Activity) {
     when {
         setting.getSetting(SettingHelper.proxy_gd_studio_key) -> {
             // GD Studio：直连在线 API，后台探测在线音源可用性（成功才提示 GD Studio 在线音源可用）
-            Thread { ScriptHelper.waitAndCheckGdStudio(activity) }.start()
+            Thread(Runnable { ScriptHelper.waitAndCheckGdStudio(activity) }, "Settings-GdCheck").start()
         }
         setting.getSetting(SettingHelper.proxy_server_key) -> {
             // 服务器代理：无本地脚本，后台探测配置服务器连通性并提示成功/失败
-            Thread { ScriptHelper.waitAndCheckProxy(activity) }.start()
+            Thread(Runnable { ScriptHelper.waitAndCheckProxy(activity) }, "Settings-ProxyCheck").start()
         }
         else -> {
             // 本地代理：释放并启动脚本，就绪后由 startScript 提示本地代理运行成功
@@ -825,7 +824,7 @@ private fun ScriptConfigScreen(colors: DolbyColors, onBack: () -> Unit) {
 // ==================== 美化设置页面 ====================
 
 @Composable
-private fun BeautyScreen(colors: DolbyColors, activity: Activity, onBack: () -> Unit) {
+private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
     SettingsHeader(
         title = "美化设置",
         subtitle = null,

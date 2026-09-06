@@ -40,15 +40,15 @@ class ExtraDao private constructor(context: Context) {
      */
     @Synchronized
     fun saveExtra(key: String, value: String) {
-        val db = dbHelper.writableDatabase
-        if (db.isOpen) {
-            val values = ContentValues().apply {
-                put(EXTRA_KEY, key)
-                put(EXTRA_VALUE, value)
+        dbHelper.writableDatabase.use { db ->
+            if (db.isOpen) {
+                val values = ContentValues().apply {
+                    put(EXTRA_KEY, key)
+                    put(EXTRA_VALUE, value)
+                }
+                db.replace(TABLE_NAME, null, values)
             }
-            db.replace(TABLE_NAME, null, values)
         }
-        db.close()
     }
 
     /**
@@ -57,17 +57,17 @@ class ExtraDao private constructor(context: Context) {
     @Synchronized
     fun getExtra(key: String): String {
         var extra = "-1"
-        val db = dbHelper.readableDatabase
-        if (db.isOpen) {
-            val cursor = db.rawQuery(
-                "select * from $TABLE_NAME where $EXTRA_KEY = '$key'", null
-            )
-            if (cursor.moveToNext()) {
-                extra = cursor.getString(cursor.getColumnIndex(EXTRA_VALUE))
+        dbHelper.readableDatabase.use { db ->
+            if (db.isOpen) {
+                db.rawQuery(
+                    "select * from $TABLE_NAME where $EXTRA_KEY = ?", arrayOf(key)
+                ).use { cursor ->
+                    if (cursor.moveToNext()) {
+                        extra = cursor.getString(cursor.getColumnIndex(EXTRA_VALUE))
+                    }
+                }
             }
-            cursor.close()
         }
-        db.close()
         return extra
     }
 

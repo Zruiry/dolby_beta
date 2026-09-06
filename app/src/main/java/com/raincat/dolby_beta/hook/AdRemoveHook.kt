@@ -68,7 +68,7 @@ class AdRemoveHook(
             override fun intercept(chain: XposedInterface.Chain): Any? {
                 // 去广告开关关闭时不拦截（运行时生效，无需重启）
                 if (!adEnabled()) return chain.proceed()
-                val args = chain.args ?: return chain.proceed()
+                val args = chain.args
                 if (args.isNotEmpty() && args[0] != null) {
                     val request = args[0]
                     try {
@@ -175,9 +175,9 @@ class AdRemoveHook(
 
     /** 删除本地广告缓存目录（异步，不阻塞启动），按实际包名自适应 */
     private fun deleteAdCache() {
-        Thread {
+        Thread(Runnable {
             // 仅去广告开启时清理（异步线程内再判一次，避免竞态）
-            if (!adEnabled()) return@Thread
+            if (!adEnabled()) return@Runnable
             try {
                 val base = Environment.getExternalStorageDirectory().absolutePath
                 val pkg = context.packageName
@@ -192,6 +192,6 @@ class AdRemoveHook(
             } catch (e: Throwable) {
                 LogUtils.w("$TAG: 清理广告缓存失败 - ${e.message}")
             }
-        }.apply { isDaemon = true }.start()
+        }, "AdRemove-CacheCleaner").apply { isDaemon = true }.start()
     }
 }

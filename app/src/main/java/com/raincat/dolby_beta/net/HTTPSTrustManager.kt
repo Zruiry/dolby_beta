@@ -5,6 +5,7 @@
  */
 package com.raincat.dolby_beta.net
 
+import com.raincat.dolby_beta.utils.LogUtils
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.SecureRandom
@@ -48,9 +49,9 @@ class HTTPSTrustManager : X509TrustManager {
                 context.init(null, trustManagers, SecureRandom())
                 HttpsURLConnection.setDefaultSSLSocketFactory(context.socketFactory)
             } catch (e: NoSuchAlgorithmException) {
-                e.printStackTrace()
+                LogUtils.e("HTTPSTrustManager: 不支持的SSL算法 - ${e.message}")
             } catch (e: KeyManagementException) {
-                e.printStackTrace()
+                LogUtils.e("HTTPSTrustManager: 初始化SSLContext失败 - ${e.message}")
             }
         }
     }

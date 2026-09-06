@@ -76,7 +76,8 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                                 urlField.isAccessible = true
                                 val urlObj = urlField.get(request)
                                 for (url in whiteUrlList) {
-                                    if (urlObj.toString().contains(url)) {
+                                    val urlStr = urlObj?.toString() ?: continue
+                                    if (urlStr.contains(url)) {
                                         val pClient = getOrCreateProxyClient(context, client)
                                         if (pClient != null) {
                                             val newArgs = args.toMutableList().toTypedArray()
@@ -84,7 +85,7 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                                             return chain.proceed(newArgs)
                                         } else {
                                             LogUtils.e("ProxyHook: 创建代理客户端失败")
-                                            setProxyFallback(context, client)
+                                            setProxyFallback(client)
                                         }
                                         break
                                     }
@@ -106,7 +107,7 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                                                         return chain.proceed(newArgs)
                                                     } else {
                                                         LogUtils.e("ProxyHook: 创建代理客户端失败")
-                                                        setProxyFallback(context, client)
+                                                        setProxyFallback(client)
                                                     }
                                                     break
                                                 }
@@ -165,14 +166,12 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                 if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) {
                     // GD Studio 直连在线 API，无需本地脚本；后台探测 API 可用性
                     ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-                    Thread {
-                        ScriptHelper.waitAndCheckGdStudio(context)
-                    }.start()
+                    Thread(Runnable { ScriptHelper.waitAndCheckGdStudio(context) }, "ProxyHook-GdCheck").start()
                     LogUtils.i("ProxyHook: GD Studio 模式启动，后台检查在线音源可用性")
                 } else {
                     ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
                     // 异步启动脚本，避免阻塞Hook初始化（文件解压和shell执行较耗时）
-                    Thread {
+                    Thread(Runnable {
                         ScriptHelper.initScript(context, false)
                         if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) {
                             ScriptHelper.startHttpProxyMode()
@@ -181,7 +180,7 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
                         }
                         // 启动后主动检查当前模式代理是否可用，失败自动重试并提示
                         ScriptHelper.waitAndCheckProxy(context)
-                    }.start()
+                    }, "ProxyHook-ScriptStarter").start()
                 }
             }
         }
@@ -264,7 +263,8 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
     /**
      * 回退方案：直接修改共享OkHttpClient的SSL字段
      */
-    private fun setProxyFallback(context: Context, client: Any) {        try {
+    private fun setProxyFallback(client: Any) {
+        try {
             val sslSocketFactoryField = try {
                 client.javaClass.getDeclaredField(fieldSSLSocketFactory)
             } catch (_: NoSuchFieldException) {

@@ -82,7 +82,7 @@ class HookOther(
                 LogUtils.e("HookOther: 去广告Hook初始化失败 - ${e.message}")
             }
         } else {
-            SettingHook(module, context, versionCode)
+            SettingHook(module, context)
 
             if (SettingHelper.getInstance().getSetting(SettingHelper.master_key)) {
                 val earlyHook = EAPIHook(module, context)
@@ -90,7 +90,7 @@ class HookOther(
                     LogUtils.i("HookOther: EAPIHook早期初始化成功，异步加载CdnHook")
                     ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                         override fun onGet() {
-                            CdnHook(module, context, versionCode)
+                            CdnHook(module, versionCode)
                             initFeatureHooks(module, context, versionCode)
                         }
                     })
@@ -99,7 +99,7 @@ class HookOther(
                     ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                         override fun onGet() {
                             EAPIHook(module, context)
-                            CdnHook(module, context, versionCode)
+                            CdnHook(module, versionCode)
                             initFeatureHooks(module, context, versionCode)
                         }
                     })
@@ -146,7 +146,7 @@ class HookOther(
                                 ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                                     override fun onGet() {
                                         EAPIHook(module, context)
-                                        CdnHook(module, context, versionCode)
+                                        CdnHook(module, versionCode)
                                     }
                                 })
                             }
@@ -155,7 +155,7 @@ class HookOther(
                 } else {
                     ClassHelper.getCacheClassList(context, versionCode, object : ClassHelper.OnCacheClassListener {
                         override fun onGet() {
-                            CdnHook(module, context, versionCode)
+                            CdnHook(module, versionCode)
                         }
                     })
                 }

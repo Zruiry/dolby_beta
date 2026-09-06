@@ -133,7 +133,7 @@ class SettingHelper private constructor(context: Context) {
      * 刷新设置缓存
      */
     fun refreshSetting(context: Context) {
-        sharedPreferences = context.getSharedPreferences("com.netease.cloudmusic.preferences", Context.MODE_MULTI_PROCESS)
+        sharedPreferences = context.getSharedPreferences("com.netease.cloudmusic.preferences", Context.MODE_PRIVATE)
         settingMap = HashMap()
 
         settingMap[master_key] = sharedPreferences.getBoolean(master_key, true)

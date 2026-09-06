@@ -58,7 +58,7 @@ object ClassHelper {
             else
                 mutableListOf()
             if (classCacheList!!.isEmpty()) {
-                Thread { getCacheClassByZip(context, version, listener) }.start()
+                Thread(Runnable { getCacheClassByZip(context, version, listener) }, "ClassHelper-DexScan").start()
             } else {
                 listener.onGet()
             }
@@ -107,7 +107,6 @@ object ClassHelper {
             LogUtils.i("ClassHelper: DEX扫描完成 - dex文件数=$dexCount, 扫描类数=$classCount, 总缓存数=${classCacheList!!.size}")
         } catch (e: Exception) {
             LogUtils.e("ClassHelper: DEX扫描异常 - ${e.message}")
-            e.printStackTrace()
         } finally {
             FileHelper.writeFileFromSD(classCachePath + File.separator + "class-$version-v$CACHE_SCHEMA_VERSION", classCacheList!!)
             listener.onGet()
@@ -161,7 +160,7 @@ object ClassHelper {
         companion object {
             private var clazz: Class<*>? = null
 
-            fun getClazz(context: Context): Class<*>? {
+            fun getClazz(): Class<*>? {
                 if (clazz == null) {
                     val pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,8}$")
                     val list = getFilteredClasses(pattern, Collections.reverseOrder())
@@ -189,10 +188,10 @@ object ClassHelper {
         }
 
         @Throws(IllegalAccessException::class, NullPointerException::class)
-        fun getHeadersObject(context: Context): Any {
-            val fields = getClazz(context)!!.declaredFields
+        fun getHeadersObject(): Any {
+            val fields = getClazz()!!.declaredFields
             val dataField = Stream.of(*fields)
-                .filter { f -> f.type == OKHttp3Header.getClazz(context) }
+                .filter { f -> f.type == OKHttp3Header.getClazz() }
                 .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type == Array<String>::class.java } }
                 .findFirst().get()
 
@@ -209,7 +208,7 @@ object ClassHelper {
         companion object {
             private var clazz: Class<*>? = null
 
-            fun getClazz(context: Context): Class<*>? {
+            fun getClazz(): Class<*>? {
                 if (clazz == null) {
                     val pattern = Pattern.compile("^okhttp3\\.[a-zA-Z]{1,7}$")
                     val list = getFilteredClasses(pattern, Collections.reverseOrder())
@@ -232,9 +231,10 @@ object ClassHelper {
             }
         }
 
+        @Suppress("UNCHECKED_CAST")
         @Throws(IllegalAccessException::class, NullPointerException::class)
-        fun getHeaders(context: Context): Array<String> {
-            val fields = getClazz(context)!!.declaredFields
+        fun getHeaders(): Array<String> {
+            val fields = getClazz()!!.declaredFields
             val dataField = Stream.of(*fields)
                 .filter { f -> f.type == Array<String>::class.java }
                 .findFirst().get()
@@ -253,7 +253,7 @@ object ClassHelper {
             private var clazz: Class<*>? = null
             private var getResultMethod: Method? = null
 
-            fun getClazz(context: Context): Class<*>? {
+            fun getClazz(): Class<*>? {
                 if (clazz == null) {
                     val pattern: Pattern = if (versionCode < 154)
                         Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
@@ -269,7 +269,7 @@ object ClassHelper {
                             .filter { c -> !Modifier.isAbstract(c.modifiers) }
                             .filter { c -> Modifier.isPublic(c.modifiers) }
                             .filter { c -> c.superclass == Any::class.java }
-                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == OKHttp3Response.getClazz(context) } }
+                            .filter { c -> Stream.of(*c.declaredFields).anyMatch { m -> m.type == OKHttp3Response.getClazz() } }
                             .findFirst()
                             .orElse(null)
                     } catch (e: Exception) {
@@ -279,10 +279,10 @@ object ClassHelper {
                 return clazz
             }
 
-            fun getResultMethod(context: Context): Method? {
+            fun getResultMethod(): Method? {
                 if (getResultMethod == null) {
                     try {
-                        val methodList = getClazz(context)?.declaredMethods?.toList() ?: return null
+                        val methodList = getClazz()?.declaredMethods?.toList() ?: return null
                         getResultMethod = Stream.of(methodList)
                             .filter { m -> m.exceptionTypes.size == 2 }
                             .findFirst()
@@ -296,8 +296,8 @@ object ClassHelper {
         }
 
         @Throws(IllegalAccessException::class, NullPointerException::class)
-        fun getResponseObject(context: Context): Any {
-            val fields = getClazz(context)!!.declaredFields
+        fun getResponseObject(): Any {
+            val fields = getClazz()!!.declaredFields
             val dataField = Stream.of(*fields)
                 .filter { f -> Stream.of(*f.type.interfaces).anyMatch { i -> i == Closeable::class.java } }
                 .filter { f -> Stream.of(*f.type.declaredFields).anyMatch { pf -> pf.type.name.startsWith("okhttp3") } }
@@ -308,8 +308,8 @@ object ClassHelper {
         }
 
         @Throws(IllegalAccessException::class, NullPointerException::class)
-        fun getEapi(context: Context): Any {
-            val fields = getClazz(context)!!.declaredFields
+        fun getEapi(): Any {
+            val fields = getClazz()!!.declaredFields
             val dataField = Stream.of(*fields)
                 .filter { c -> Modifier.isAbstract(c.type.modifiers) }
                 .filter { c -> c.type.superclass == Any::class.java }
@@ -327,7 +327,7 @@ object ClassHelper {
     object HttpUrl {
         private var clazz: Class<*>? = null
 
-        fun getClazz(context: Context): Class<*>? {
+        fun getClazz(): Class<*>? {
             if (clazz == null) {
                 val pattern: Pattern = if (versionCode < 154)
                     Pattern.compile("^com\\.netease\\.cloudmusic\\.[a-z]\\.[a-z]\\.[a-z]\\.[a-z]$")
@@ -354,7 +354,7 @@ object ClassHelper {
             return clazz
         }
 
-        fun getUri(context: Context, eapi: Any): Uri {
+        fun getUri(eapi: Any): Uri {
             try {
                 val fields = eapi.javaClass.declaredFields
                 val dataField = Stream.of(*fields)
@@ -383,7 +383,7 @@ object ClassHelper {
      * 获取请求参数 - EAPIHook旧版方式需要
      */
     object HttpParams {
-        fun getParams(context: Context, eapi: Any): LinkedHashMap<String, String> {
+        fun getParams(eapi: Any): LinkedHashMap<String, String> {
             val paramsMap = LinkedHashMap<String, String>()
             try {
                 val fields = eapi.javaClass.declaredFields
@@ -409,7 +409,7 @@ object ClassHelper {
      * CDN拦截器方法获取
      */
     object HttpInterceptor {
-        fun getMethodList(context: Context): List<Method>? {
+        fun getMethodList(): List<Method>? {
             try {
                 val pattern = Pattern.compile("^com\\.netease\\.cloudmusic\\.network\\.[a-z]+\\.[a-z]+\$")
                 val list = getFilteredClasses(pattern, null)
@@ -460,7 +460,7 @@ object ClassHelper {
         private var clazz: Class<*>? = null
 
         @JvmStatic
-        fun getClazz(context: Context): Class<*>? {
+        fun getClazz(): Class<*>? {
             if (clazz != null) return clazz
             try {
                 // 正则匹配混淆包名下的类（不硬编码包名，兼容不同版本）

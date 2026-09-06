@@ -45,8 +45,7 @@ import java.lang.reflect.Method
  */
 class SettingHook(
     private val module: XposedModule,
-    context: Context,
-    versionCode: Int
+    context: Context
 ) {
 
     /** 标记hook是否已成功应用 */

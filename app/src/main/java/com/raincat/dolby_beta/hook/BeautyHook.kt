@@ -49,7 +49,7 @@ class BeautyHook(
      */
     private fun hookHideTab() {
         // 通过特征匹配查找底部Tab管理类（规范1：禁止硬编码混淆类名）
-        val bottomNavClass = com.raincat.dolby_beta.helper.ClassHelper.BottomTabManager.getClazz(context)
+        val bottomNavClass = com.raincat.dolby_beta.helper.ClassHelper.BottomTabManager.getClazz()
             ?: run {
                 // 特征匹配失败，禁用精简Tab功能
                 LogUtils.e("$TAG: hookHideTab 特征匹配未找到底部Tab管理类，禁用精简Tab功能")
@@ -74,7 +74,7 @@ class BeautyHook(
         module.hook(hMethod).intercept(object : XposedInterface.Hooker {
             override fun intercept(chain: XposedInterface.Chain): Any? {
                 try {
-                    val result = chain.proceed() as? java.util.List<*> ?: return chain.proceed()
+                    val result = chain.proceed() as? List<*> ?: return chain.proceed()
                     // 过滤Tab列表，只保留 "mine" 和 "main"，保持原始顺序
                     val filteredList = mutableListOf<Any>()
                     result.forEach { item ->

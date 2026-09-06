@@ -38,8 +38,7 @@ class MainHook : XposedModule() {
         // 启动分隔标记，便于在累积日志中定位每次启动（captureLog 场景）
         // 仅在主进程输出启动分隔标记，避免多进程重复输出（播放进程也会触发 onModuleLoaded）
         val processName = param.processName
-        val isMainProcess = processName == null ||
-            processName == "com.netease.cloudmusic" ||
+        val isMainProcess = processName == "com.netease.cloudmusic" ||
             processName == "com.netease.cloudmusic.lite" ||
             processName == "com.hihonor.cloudmusic"
         ScriptHelper.modulePath = moduleApplicationInfo.sourceDir

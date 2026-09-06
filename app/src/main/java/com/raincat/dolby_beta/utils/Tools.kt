@@ -41,7 +41,7 @@ object Tools {
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            LogUtils.e("Tools.showToastOnLooper: ${e.message}")
         }
     }
 
@@ -56,16 +56,12 @@ object Tools {
             RootTools.getShell(false).add(command)
         } catch (e: TimeoutException) {
             LogUtils.e("Tools.shell: 执行超时 - ${e.message}")
-            e.printStackTrace()
         } catch (e: com.stericson.RootShell.exceptions.RootDeniedException) {
             LogUtils.e("Tools.shell: Root权限被拒绝 - ${e.message}")
-            e.printStackTrace()
         } catch (e: IOException) {
             LogUtils.e("Tools.shell: IO异常 - ${e.message}")
-            e.printStackTrace()
         } catch (e: Exception) {
             LogUtils.e("Tools.shell: 执行异常 - ${e.javaClass.simpleName}: ${e.message}")
-            e.printStackTrace()
         }
     }
 }

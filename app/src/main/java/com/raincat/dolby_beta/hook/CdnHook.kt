@@ -5,7 +5,6 @@
  */
 package com.raincat.dolby_beta.hook
 
-import android.content.Context
 import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.utils.LogUtils
 import io.github.libxposed.api.XposedInterface
@@ -15,12 +14,12 @@ import io.github.libxposed.api.XposedModule
  * CDN拦截器Hook - 绕过CDN责任链检测
  * 直接返回第3个参数，跳过原始方法执行
  */
-class CdnHook(module: XposedModule, context: Context, versionCode: Int) {
+class CdnHook(module: XposedModule, versionCode: Int) {
 
     init {
         if (versionCode >= 138) {
             // 获取拦截器方法列表，可能为null（目标类未找到时），需要判空避免崩溃
-            val methodList = ClassHelper.HttpInterceptor.getMethodList(context)
+            val methodList = ClassHelper.HttpInterceptor.getMethodList()
             if (!methodList.isNullOrEmpty()) {
                 for (m in methodList) {
                     module.hook(m).intercept(object : XposedInterface.Hooker {

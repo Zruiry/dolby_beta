@@ -4,7 +4,13 @@
  */
 package com.raincat.dolby_beta.helper
 
-import java.io.*
+import com.raincat.dolby_beta.utils.LogUtils
+import java.io.BufferedWriter
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStreamWriter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
@@ -60,16 +66,14 @@ object FileHelper {
         val file = File(path)
         if (!file.isDirectory) {
             try {
-                val inputStream: InputStream = FileInputStream(file)
-                val inputStreamReader = InputStreamReader(inputStream)
-                val bufferedReader = BufferedReader(inputStreamReader)
-                var line: String?
-                while (bufferedReader.readLine().also { line = it } != null) {
-                    list.add(line!!)
+                FileInputStream(file).bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        list.add(line)
+                    }
                 }
-                inputStream.close()
             } catch (e: Exception) {
-                e.printStackTrace()
+                LogUtils.e("FileHelper.readFileFromSD: 读取失败 - ${e.message}")
             }
         }
         return list
@@ -80,22 +84,16 @@ object FileHelper {
      */
     @JvmStatic
     fun writeFileFromSD(path: String, content: List<String>) {
-        var out: BufferedWriter? = null
         try {
             val file = File(path)
-            out = BufferedWriter(OutputStreamWriter(FileOutputStream(file, false), "utf-8"))
-            for (s in content) {
-                out.write(s)
-                out.write("\n")
+            BufferedWriter(OutputStreamWriter(FileOutputStream(file, false), Charsets.UTF_8)).use { out ->
+                for (s in content) {
+                    out.write(s)
+                    out.write("\n")
+                }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            try {
-                out?.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
+            LogUtils.e("FileHelper.writeFileFromSD: 写入失败 - ${e.message}")
         }
     }
 
@@ -104,34 +102,34 @@ object FileHelper {
      */
     @JvmStatic
     fun unzipFile(zipFileString: String, outPathString: String, fileParentName: String, fileName: String): Boolean {
-        try {
+        return try {
             val outPath = File(outPathString)
             if (!outPath.exists()) outPath.mkdirs()
 
-            val zipFile = ZipFile(zipFileString)
-            val entries = zipFile.entries()
-            while (entries.hasMoreElements()) {
-                val entry: ZipEntry = entries.nextElement()
-                if (entry.name.contains(fileParentName) && entry.name.contains(fileName) && !entry.isDirectory) {
-                    val inputStream = zipFile.getInputStream(entry)
-                    val dstFile = File("$outPathString/$fileName")
-                    val fos = FileOutputStream(dstFile)
-                    val buffer = ByteArray(8192)
-                    var len: Int
-                    while (inputStream.read(buffer).also { len = it } != -1) {
-                        fos.write(buffer, 0, len)
+            ZipFile(zipFileString).use { zipFile ->
+                val entries = zipFile.entries()
+                while (entries.hasMoreElements()) {
+                    val entry: ZipEntry = entries.nextElement()
+                    if (entry.name.contains(fileParentName) && entry.name.contains(fileName) && !entry.isDirectory) {
+                        zipFile.getInputStream(entry).use { input ->
+                            FileOutputStream(File("$outPathString/$fileName")).use { fos ->
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (input.read(buffer).also { len = it } != -1) {
+                                    fos.write(buffer, 0, len)
+                                }
+                                fos.flush()
+                            }
+                        }
+                        break
                     }
-                    fos.flush()
-                    fos.close()
-                    inputStream.close()
-                    break
                 }
             }
+            true
         } catch (e: IOException) {
-            e.printStackTrace()
-            return false
+            LogUtils.e("FileHelper.unzipFile: 解压失败 - ${e.message}")
+            false
         }
-        return true
     }
 
     /**
@@ -139,37 +137,35 @@ object FileHelper {
      */
     @JvmStatic
     fun unzipFiles(zipFileString: String, outPathString: String): Boolean {
-        try {
+        return try {
             val outPath = File(outPathString)
             if (!outPath.exists()) outPath.mkdirs()
 
-            val zipFile = ZipFile(zipFileString)
-            val entries = zipFile.entries()
-            while (entries.hasMoreElements()) {
-                val entry: ZipEntry = entries.nextElement()
-                if (entry.isDirectory) {
-                    var szName = entry.name
-                    szName = szName.substring(0, szName.length - 1)
-                    val folder = File(outPathString + File.separator + szName)
-                    folder.mkdirs()
-                } else {
-                    val inputStream = zipFile.getInputStream(entry)
-                    val dstFile = File("$outPathString/${entry.name}")
-                    val fos = FileOutputStream(dstFile)
-                    val buffer = ByteArray(8192)
-                    var len: Int
-                    while (inputStream.read(buffer).also { len = it } != -1) {
-                        fos.write(buffer, 0, len)
+            ZipFile(zipFileString).use { zipFile ->
+                val entries = zipFile.entries()
+                while (entries.hasMoreElements()) {
+                    val entry: ZipEntry = entries.nextElement()
+                    if (entry.isDirectory) {
+                        val szName = entry.name.substring(0, entry.name.length - 1)
+                        File(outPathString + File.separator + szName).mkdirs()
+                    } else {
+                        zipFile.getInputStream(entry).use { input ->
+                            FileOutputStream(File("$outPathString/${entry.name}")).use { fos ->
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (input.read(buffer).also { len = it } != -1) {
+                                    fos.write(buffer, 0, len)
+                                }
+                                fos.flush()
+                            }
+                        }
                     }
-                    fos.flush()
-                    fos.close()
-                    inputStream.close()
                 }
             }
+            true
         } catch (e: IOException) {
-            e.printStackTrace()
-            return false
+            LogUtils.e("FileHelper.unzipFiles: 解压失败 - ${e.message}")
+            false
         }
-        return true
     }
 }
