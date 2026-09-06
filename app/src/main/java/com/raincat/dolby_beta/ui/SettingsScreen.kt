@@ -5,27 +5,24 @@
 package com.raincat.dolby_beta.ui
 
 import android.app.Activity
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,6 +64,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.raincat.dolby_beta.BuildConfig
@@ -240,7 +238,7 @@ private fun SettingsRoot(
     // 拦截返回键，逐级返回而非直接关闭
     BackHandler { goBack() }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .clickable(
@@ -249,6 +247,8 @@ private fun SettingsRoot(
             ) { goBack() },
         contentAlignment = Alignment.Center,
     ) {
+        // 捕获可用高度（覆盖层高度上限 = 全高 - 上下露出区），供嵌套作用域使用
+        val contentMaxHeight = maxHeight
         // 横向安全边距容器：窄屏留白不贴边/不溢出；Surface 用 fillMaxWidth 填满该容器
         Box(
             modifier = Modifier
@@ -256,34 +256,75 @@ private fun SettingsRoot(
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = DialogWidth) // 超宽屏封顶，普通手机宽度小于上限则自然全宽
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { focusManager.clearFocus() },
-                shape = RoundedCornerShape(16.dp),
-                color = colors.dialogBg,
-                shadowElevation = 10.dp,
-            ) {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                when (screen) {
-                    Screen.MAIN -> MainScreen(colors, activity) { screen = it }
-                    Screen.PROXY -> ProxyScreen(colors, activity) { screen = it }
-                    Screen.PROXY_CONFIG -> ProxyConfigScreen(colors) { screen = Screen.PROXY }
-                    Screen.SCRIPT_CONFIG -> ScriptConfigScreen(colors) { screen = Screen.PROXY }
-                    Screen.GD_CONFIG -> GdConfigScreen(colors) { screen = Screen.PROXY }
-                    Screen.BEAUTY -> BeautyScreen(colors) { screen = Screen.MAIN }
+            // 基础卡片（主页面常驻作为底层）：高度自适应内容（避免内容不足时底部留大片空白），
+            // 垂直居中；二级页浮层叠加其上，四周或上下露出主页面边缘体现层级
+            Box {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = DialogWidth)
+                        .heightIn(max = contentMaxHeight)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { focusManager.clearFocus() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.dialogBg,
+                    shadowElevation = 10.dp,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 10.dp),
+                    ) {
+                        MainScreen(colors, activity) { screen = it }
+                    }
                 }
-                DialogActions(
-                    screen = screen,
-                    colors = colors,
-                    onRestart = { restartApplication(activity) },
-                    onBack = goBack,
-                )
+                // 子页面打开时，给底层主卡片盖一层等大遮罩，突出当前页面层级
+                if (screen != Screen.MAIN) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                color = Color.Black.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(16.dp),
+                            ),
+                    )
+                }
             }
+
+            // 二级页覆盖层：叠在主卡片之上，宽度略收窄、高度留出上下露出区，
+            // 四周可见主页面内容；内部滚动；返回靠箭头/系统返回/点击主页面露出区
+            if (screen != Screen.MAIN) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = DialogWidth)
+                        .padding(horizontal = 10.dp)
+                        .heightIn(max = contentMaxHeight - 40.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { focusManager.clearFocus() },
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.dialogBg,
+                    shadowElevation = 18.dp,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 10.dp),
+                    ) {
+                        when (screen) {
+                            Screen.PROXY -> ProxyScreen(colors, activity) { screen = it }
+                            Screen.PROXY_CONFIG -> ProxyConfigScreen(colors) { screen = Screen.PROXY }
+                            Screen.SCRIPT_CONFIG -> ScriptConfigScreen(colors) { screen = Screen.PROXY }
+                            Screen.GD_CONFIG -> GdConfigScreen(colors) { screen = Screen.PROXY }
+                            Screen.BEAUTY -> BeautyScreen(colors, activity) { screen = Screen.MAIN }
+                            else -> MainScreen(colors, activity) { screen = it }
+                        }
+                    }
+                }
             }
         }
     }
@@ -321,7 +362,6 @@ private fun MainScreen(
     val setMaster = { new: Boolean ->
         masterEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.master_key, new)
-        Tools.showToastOnLooper(activity, "打开/关闭此设置需重启网易云")
     }
     val setDex = { new: Boolean ->
         dexEnabled = new
@@ -388,7 +428,6 @@ private fun MainScreen(
                     masterEnabled = true
                     dexEnabled = true
                     darkFollowEnabled = true
-                    Toast.makeText(activity, "重置完成，手动重启网易云生效", Toast.LENGTH_SHORT).show()
                 }) {
                     Text("重置", fontSize = 13.sp, color = colors.switchTrackOn)
                 }
@@ -458,9 +497,6 @@ private fun ProxyScreen(
     }
 
     // 开关状态需用 remember 持有，直接读 SettingHelper 不会触发重组，界面无法即时刷新
-    var grayEnabled by remember {
-        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_gray_key))
-    }
     var priorityEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_priority_key))
     }
@@ -469,10 +505,6 @@ private fun ProxyScreen(
     }
     var gdFlacEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_flac_key))
-    }
-    val setGray = { new: Boolean ->
-        grayEnabled = new
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gray_key, new)
     }
     val setPriority = { new: Boolean ->
         priorityEnabled = new
@@ -563,9 +595,6 @@ private fun ProxyScreen(
             NavItem(SettingHelper.script_configuration_title, SettingHelper.script_configuration_sub, colors = colors) {
                 onNavigate(Screen.SCRIPT_CONFIG)
             }
-            CardDivider(colors)
-            SwitchItem(SettingHelper.proxy_gray_title, SettingHelper.proxy_gray_sub,
-                grayEnabled, setGray, colors)
             CardDivider(colors)
             SwitchItem(SettingHelper.proxy_priority_title, SettingHelper.proxy_priority_sub,
                 priorityEnabled, setPriority, colors)
@@ -785,7 +814,7 @@ private fun ScriptConfigScreen(colors: DolbyColors, onBack: () -> Unit) {
 // ==================== 美化设置页面 ====================
 
 @Composable
-private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
+private fun BeautyScreen(colors: DolbyColors, activity: Activity, onBack: () -> Unit) {
     SettingsHeader(
         title = "美化设置",
         subtitle = null,
@@ -802,6 +831,13 @@ private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
         tabHideEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.beauty_tab_hide_key, new)
     }
+    var adEnabled by remember {
+        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.beauty_ad_key))
+    }
+    val setAd = { new: Boolean ->
+        adEnabled = new
+        SettingHelper.getInstance().setSetting(SettingHelper.beauty_ad_key, new)
+    }
 
     SectionLabel("美化", colors)
     GroupCard(colors) {
@@ -810,6 +846,14 @@ private fun BeautyScreen(colors: DolbyColors, onBack: () -> Unit) {
             SettingHelper.beauty_tab_hide_sub,
             tabHideEnabled,
             setTabHide,
+            colors,
+        )
+        CardDivider(colors)
+        SwitchItem(
+            SettingHelper.beauty_ad_title,
+            SettingHelper.beauty_ad_sub,
+            adEnabled,
+            setAd,
             colors,
         )
     }
@@ -1068,14 +1112,17 @@ private fun ModeOption(
                 shape = RoundedCornerShape(12.dp),
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(horizontal = 6.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = title,
             fontSize = 13.sp,
             color = if (enabled) colors.title else colors.desc,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            softWrap = false,
+            modifier = Modifier.weight(1f, fill = true),
         )
         Spacer(modifier = Modifier.width(6.dp))
         Box(
@@ -1100,86 +1147,4 @@ private fun ModeOption(
             }
         }
     }
-}
-
-/** 底部操作栏（主页面：确定=关闭；子页面：仅保存=返回上一级；重启按钮一致） */
-@Composable
-private fun DialogActions(
-    screen: Screen,
-    colors: DolbyColors,
-    onRestart: () -> Unit,
-    onBack: () -> Unit,
-) {
-    val isMain = screen == Screen.MAIN
-    val primaryText = if (isMain) "确定" else "仅保存"
-    val secondaryText = if (isMain) "重启网易云" else "保存并重启"
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 14.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            onClick = onRestart,
-            modifier = Modifier.height(28.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        ) {
-            Text(secondaryText, fontSize = 12.sp, color = colors.switchTrackOn)
-        }
-        Spacer(modifier = Modifier.width(4.dp))
-        Button(
-            onClick = onBack,
-            modifier = Modifier.height(28.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = colors.switchTrackOn),
-        ) {
-            Text(primaryText, fontSize = 12.sp, color = Color.White)
-        }
-    }
-}
-
-/**
- * 重启网易云应用：用 AlarmManager 注册一个稍后触发的启动闹钟（PendingIntent 注册于系统，
- * 进程死亡后仍会触发），随后结束当前进程，实现真正的重启。
- */
-private fun restartApplication(context: Context) {
-    ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-    // 结束播放子进程
-    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-    activityManager.runningAppProcesses?.forEach { process ->
-        if (process.processName.contains(":play")) {
-            android.os.Process.killProcess(process.pid)
-        }
-    }
-    // 调度重启闹钟：进程结束后由系统重新拉起主界面
-    try {
-        val intent = Intent().setClassName(
-            context.packageName,
-            "com.netease.cloudmusic.activity.MainActivity",
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        val pendingIntent = PendingIntent.getActivity(
-            context, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT,
-        )
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val triggerAt = System.currentTimeMillis() + 1000
-        try {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC, triggerAt, pendingIntent)
-        } catch (e: Exception) {
-            Log.w(TAG, "setExactAndAllowWhileIdle 不可用，回退: ${e.message}")
-            try {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC, triggerAt, pendingIntent)
-            } catch (e2: Exception) {
-                alarmManager.set(AlarmManager.RTC, triggerAt, pendingIntent)
-            }
-        }
-    } catch (e: Exception) {
-        Log.e(TAG, "调度重启闹钟失败: ${e.message}")
-    }
-    // 结束当前主进程，触发系统按闹钟重建
-    Handler(Looper.getMainLooper()).postDelayed({
-        android.os.Process.killProcess(android.os.Process.myPid())
-        System.exit(0)
-    }, 200)
 }

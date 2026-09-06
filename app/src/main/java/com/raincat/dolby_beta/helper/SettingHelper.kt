@@ -1,7 +1,7 @@
 /**
  * 设置中心 - 管理所有模块配置项
  *
- * 包含音源代理、美化、签到、黑胶VIP等功能开关。
+ * 包含音源代理、美化、去广告等功能开关。
  * 音源代理部分以当前项目为准，其余功能从 dev 分支迁移而来。
  *
  * 使用SharedPreferences存储，支持跨进程读取。
@@ -18,13 +18,6 @@ import android.content.SharedPreferences
 class SettingHelper private constructor(context: Context) {
 
     companion object {
-        // ==================== 广播Action ====================
-        @JvmField val refresh_setting = "β_refresh_setting"
-        @JvmField val proxy_setting = "β_proxy_setting"
-        @JvmField val beauty_setting = "β_beauty_setting"
-        @JvmField val proxy_configuration_setting = "β_proxy_configuration_setting"
-        @JvmField val script_configuration_setting = "β_script_configuration_setting"
-
         // ==================== 总开关 ====================
         @JvmField val master_key = "β_master_key"
         @JvmField val master_title = "总开关"
@@ -35,15 +28,12 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val dex_sub = "加快模块加载速度，但同版本号的内测版与稳定版互装可能会有兼容性问题"
 
         // ==================== 音源代理 ====================
-        @JvmField val proxy_key = "β_proxy_key"
         @JvmField val proxy_title = "音源代理设置"
 
         @JvmField val proxy_master_key = "β_proxy_master_key"
         @JvmField val proxy_master_title = "启用音源代理"
 
         @JvmField val proxy_server_key = "β_proxy_server_key"
-        @JvmField val proxy_server_title = "启用服务器代理"
-        @JvmField val proxy_server_sub = "如果您不想使用高占用的node，有自己的服务器代理可使用此方式并填写自己的服务器地址与端口，且使用服务器对应音质"
 
         @JvmField val proxy_priority_key = "β_proxy_priority_key"
         @JvmField val proxy_priority_title = "音质优先"
@@ -52,10 +42,6 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val proxy_flac_key = "β_proxy_flac_key"
         @JvmField val proxy_flac_title = "无损音质优先"
         @JvmField val proxy_flac_sub = "使用外部音源时优先获取无损音质，但并不是100%能获取到无损音质"
-
-        @JvmField val proxy_gray_key = "β_proxy_gray_key"
-        @JvmField val proxy_gray_title = "不变灰"
-        @JvmField val proxy_gray_sub = "仅影响显示效果，与是否能播放无关，会导致无音源歌曲无法播放且无法自动跳过"
 
         @JvmField val http_proxy_key = "β_http_proxy_key"
         @JvmField val http_proxy_title = "代理服务器"
@@ -81,15 +67,12 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val proxy_original_title = "音源顺序（空格隔开）"
         @JvmField val proxy_original_default = "kuwo pyncmd"
 
-        @JvmField val proxy_cover_key = "β_proxy_cover_key"
         @JvmField val proxy_cover_title = "重新释放脚本"
         @JvmField val proxy_cover_sub = "当更新后或者发现UnblockNeteaseMusic运行不正常时可尝试重新释放脚本"
 
-        @JvmField val proxy_configuration_key = "β_proxy_configuration_key"
         @JvmField val proxy_configuration_title = "服务器代理配置"
         @JvmField val proxy_configuration_sub = "在此填入对于代理服务器的地址与端口"
 
-        @JvmField val script_configuration_key = "β_script_configuration_key"
         @JvmField val script_configuration_title = "脚本参数配置"
         @JvmField val script_configuration_sub = "在此填入本地脚本的运行参数，仅本地脚本模式生效"
 
@@ -98,8 +81,6 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val proxy_gd_api = "https://music-api.gdstudio.xyz/api.php"
 
         @JvmField val proxy_gd_studio_key = "β_proxy_gd_studio_key"
-        @JvmField val proxy_gd_studio_title = "GD Studio"
-        @JvmField val proxy_gd_studio_sub = "调用 GD Studio 在线音源 API 为无版权歌曲获取可播链接，API: https://music-api.gdstudio.xyz/api.php"
 
         @JvmField val proxy_gd_source_key = "β_proxy_gd_source_key"
         @JvmField val proxy_gd_source_title = "替换音源"
@@ -109,12 +90,10 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val proxy_gd_flac_title = "无损音质优先"
         @JvmField val proxy_gd_flac_sub = "GD Studio 模式优先获取无损音质，但并不是100%能获取到无损音质"
 
-        @JvmField val proxy_gd_configuration_key = "β_proxy_gd_configuration_key"
         @JvmField val proxy_gd_configuration_title = "API音源配置"
         @JvmField val proxy_gd_configuration_sub = "当前可稳定获取播放地址的音源为 joox，kuwo/tencent 等暂不可用"
 
         // ==================== 美化设置 ====================
-        @JvmField val beauty_key = "β_beauty_key"
         @JvmField val beauty_title = "美化设置"
 
         @JvmField val beauty_follow_dark_key = "β_beauty_follow_dark_key"
@@ -124,6 +103,10 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val beauty_tab_hide_key = "β_beauty_tab_hide_key"
         @JvmField val beauty_tab_hide_title = "精简Tab"
         @JvmField val beauty_tab_hide_sub = "首页仅保留\"我的\"与\"发现\"，并默认显示\"我的\""
+
+        @JvmField val beauty_ad_key = "β_beauty_ad_key"
+        @JvmField val beauty_ad_title = "去广告"
+        @JvmField val beauty_ad_sub = "拦截开屏广告与评论区插入广告等"
 
         @Volatile
         private var instance: SettingHelper? = null
@@ -162,12 +145,13 @@ class SettingHelper private constructor(context: Context) {
         settingMap[proxy_gd_studio_key] = sharedPreferences.getBoolean(proxy_gd_studio_key, false)
         settingMap[proxy_priority_key] = sharedPreferences.getBoolean(proxy_priority_key, false)
         settingMap[proxy_flac_key] = sharedPreferences.getBoolean(proxy_flac_key, false)
-        settingMap[proxy_gray_key] = sharedPreferences.getBoolean(proxy_gray_key, false)
         settingMap[proxy_gd_flac_key] = sharedPreferences.getBoolean(proxy_gd_flac_key, false)
 
         // 美化设置（深色跟随系统默认启用，保持与升级前一致）
         settingMap[beauty_follow_dark_key] = sharedPreferences.getBoolean(beauty_follow_dark_key, true)
         settingMap[beauty_tab_hide_key] = sharedPreferences.getBoolean(beauty_tab_hide_key, false)
+        // 去广告默认启用
+        settingMap[beauty_ad_key] = sharedPreferences.getBoolean(beauty_ad_key, true)
     }
 
     fun setSetting(key: String, value: Boolean) {
@@ -197,10 +181,10 @@ class SettingHelper private constructor(context: Context) {
         deleteSetting(proxy_gd_studio_key)
         deleteSetting(proxy_priority_key)
         deleteSetting(proxy_flac_key)
-        deleteSetting(proxy_gray_key)
         deleteSetting(proxy_gd_flac_key)
         deleteSetting(beauty_follow_dark_key)
         deleteSetting(beauty_tab_hide_key)
+        deleteSetting(beauty_ad_key)
         // 输入类配置（代理服务器/端口/Cookie/音源顺序/GD音源）
         deleteSetting(http_proxy_key)
         deleteSetting(proxy_port_key)
@@ -221,10 +205,10 @@ class SettingHelper private constructor(context: Context) {
         settingMap[proxy_gd_studio_key] = false
         settingMap[proxy_priority_key] = false
         settingMap[proxy_flac_key] = false
-        settingMap[proxy_gray_key] = false
         settingMap[proxy_gd_flac_key] = false
         settingMap[beauty_follow_dark_key] = true
         settingMap[beauty_tab_hide_key] = false
+        settingMap[beauty_ad_key] = true
     }
 
     // ==================== 音源代理相关 ====================

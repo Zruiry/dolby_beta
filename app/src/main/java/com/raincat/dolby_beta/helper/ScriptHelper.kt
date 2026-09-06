@@ -325,8 +325,8 @@ object ScriptHelper {
             val conn = java.net.URL(urlStr).openConnection() as javax.net.ssl.HttpsURLConnection
             try {
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
+                conn.connectTimeout = 2000
+                conn.readTimeout = 2000
                 conn.setRequestProperty("User-Agent", "NeteaseMusic/8.10.05")
                 conn.setRequestProperty("Accept", "application/json")
                 val code = conn.responseCode
@@ -346,14 +346,16 @@ object ScriptHelper {
         }
     }
 
-    /** 网易云启动后主动检查 GD Studio 在线音源可用性（供 ProxyHook 启动线程调用） */
+    /** 网易云启动后主动检查 GD Studio 在线音源可用性（供 ProxyHook 启动线程调用）
+     *  GD 模式的音源替换不依赖 SCRIPT_STATUS（EAPIHook 以 gdActive 直接判定），
+     *  故此处探测仅用于给用户即时状态提示：缩短单次超时并减少重试，尽快给出结论 */
     @JvmStatic
     fun waitAndCheckGdStudio(context: Context) {
-        // 首次进入可能网络未就绪，做几次短重试再定性
         var ok = false
-        repeat(6) {
+        // 单次探测最长 2s，成功即返回；失败快速重试 2 次（覆盖启动初期网络未就绪），最坏约 6s
+        repeat(3) {
             if (checkGdStudioAvailable()) { ok = true; return@repeat }
-            Thread.sleep(600)
+            Thread.sleep(300)
         }
         // 结果落定时若已切走模式则作废，避免陈旧结果误报
         if (!SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) return

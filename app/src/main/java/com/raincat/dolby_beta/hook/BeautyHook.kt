@@ -7,6 +7,7 @@
 package com.raincat.dolby_beta.hook
 
 import android.content.Context
+import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.helper.SettingHelper
 import com.raincat.dolby_beta.utils.LogUtils
 import io.github.libxposed.api.XposedInterface
@@ -125,7 +126,7 @@ class BeautyHook(
      * ViewPager2 首次布局即显示 mine 页面，无需后续 setCurrentItem 切换，消除空白闪烁
      */
     private fun hookViewPager2InitPosition() {
-        val vp2Class = findClassIfExists(
+        val vp2Class = ClassHelper.findClassIfExists(
             "androidx.viewpager2.widget.ViewPager2", context.classLoader
         ) ?: run {
             LogUtils.w("$TAG: hookViewPager2InitPosition 未找到 ViewPager2 类")
@@ -201,7 +202,7 @@ class BeautyHook(
                         val layoutManagerField = vp2Class.getDeclaredField("mLayoutManager")
                         layoutManagerField.isAccessible = true
                         val layoutManager = layoutManagerField.get(chain.thisObject)
-                        val llmClass = findClassIfExists(
+                        val llmClass = ClassHelper.findClassIfExists(
                             "androidx.recyclerview.widget.LinearLayoutManager", context.classLoader
                         )
                         if (layoutManager != null && llmClass != null) {
@@ -257,7 +258,7 @@ class BeautyHook(
      * 方案：hook 目标方法返回true，使默认Tab选择方法中SELECT_PAGE_INDEX=s4/t4("mine")=0（过滤后索引）
      */
     private fun hookDefaultTab() {
-        val mainActivityClass = findClassIfExists(
+        val mainActivityClass = ClassHelper.findClassIfExists(
             "com.netease.cloudmusic.activity.MainActivity", context.classLoader
         ) ?: run {
             LogUtils.w("$TAG: hookDefaultTab 未找到 MainActivity")
@@ -338,7 +339,7 @@ class BeautyHook(
      * 打印setCurrentItem的position参数，确认ViewPager2初始显示的position
      */
     private fun hookViewPager2SetCurrentItem() {
-        val viewPager2Class = findClassIfExists(
+        val viewPager2Class = ClassHelper.findClassIfExists(
             "androidx.viewpager2.widget.ViewPager2", context.classLoader
         ) ?: run {
             LogUtils.w("$TAG: hookViewPager2SetCurrentItem 未找到 ViewPager2 类")
@@ -387,14 +388,6 @@ class BeautyHook(
     }
 
     // ==================== 辅助方法 ====================
-
-    private fun findClassIfExists(className: String, classLoader: ClassLoader): Class<*>? {
-        return try {
-            classLoader.loadClass(className)
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
 
     private fun findMethodIfExists(clazz: Class<*>, methodName: String, vararg paramTypes: Class<*>): java.lang.reflect.Method? {
         return try {

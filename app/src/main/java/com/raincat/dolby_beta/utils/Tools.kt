@@ -46,15 +46,6 @@ object Tools {
     }
 
     /**
-     * dp转px
-     */
-    @JvmStatic
-    fun dp2px(context: Context, dpValue: Float): Int {
-        val scale = context.resources.displayMetrics.density
-        return (dpValue * scale + 0.5f).toInt()
-    }
-
-    /**
      * 执行ADB/Shell命令
      * 使用RootTools获取非root shell执行命令
      */

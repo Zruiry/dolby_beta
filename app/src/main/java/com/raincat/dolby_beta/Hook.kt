@@ -19,6 +19,7 @@ import android.os.Build
 import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.helper.ExtraHelper
 import com.raincat.dolby_beta.helper.SettingHelper
+import com.raincat.dolby_beta.hook.AdRemoveHook
 import com.raincat.dolby_beta.hook.BeautyHook
 import com.raincat.dolby_beta.hook.CdnHook
 import com.raincat.dolby_beta.hook.EAPIHook
@@ -30,8 +31,6 @@ import io.github.libxposed.api.XposedModule
 
 class Hook(
     private val module: XposedModule,
-    classLoader: ClassLoader,
-    packageName: String,
     context: Context,
     isEarly: Boolean
 ) {
@@ -63,7 +62,7 @@ class Hook(
 
     /**
      * 主进程初始化
-     * - attachBaseContext阶段：ProxyHook + 脚本启动 + SongPrivilege（最早时机，cronet还未添加）
+     * - attachBaseContext阶段：ProxyHook + AdRemoveHook + SongPrivilege（最早时机，cronet还未添加）
      * - onCreate阶段：SettingHook + EAPIHook + CdnHook + 美化Hook（需要Application完全初始化）
      */
     private fun initMainProcess(module: XposedModule, context: Context, versionCode: Int, isEarly: Boolean) {
@@ -78,6 +77,14 @@ class Hook(
                 LogUtils.i("Hook: 主进程[attachBaseContext] ProxyHook初始化完成")
             } else {
                 LogUtils.i("Hook: 主开关未启用，跳过ProxyHook")
+            }
+
+            // 去广告：URL 黑洞拦截 + 旧开屏 + 清理本地广告缓存
+            try {
+                AdRemoveHook(module, context)
+                LogUtils.i("Hook: 主进程[attachBaseContext] 去广告Hook初始化完成")
+            } catch (e: Throwable) {
+                LogUtils.e("Hook: 去广告Hook初始化失败 - ${e.message}")
             }
         } else {
             // onCreate阶段：初始化SettingHook、EAPIHook、CdnHook
@@ -98,7 +105,7 @@ class Hook(
     }
 
     /**
-     * 初始化功能Hook（仅美化功能）
+     * 初始化功能Hook（美化功能）
      */
     private fun initFeatureHooks(module: XposedModule, context: Context, versionCode: Int) {
         try {

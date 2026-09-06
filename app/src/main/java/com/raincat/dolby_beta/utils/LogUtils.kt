@@ -157,14 +157,6 @@ object LogUtils {
         }
     }
 
-    /** Verbose 级别日志 */
-    fun v(msg: String) {
-        if (BuildConfig.LOG_DEBUG) {
-            Log.v(TAG, msg)
-            writeToFile("V", msg)
-        }
-    }
-
     /** 获取异常堆栈字符串 */
     fun getStackTraceString(e: Throwable): String {
         return Log.getStackTraceString(e)

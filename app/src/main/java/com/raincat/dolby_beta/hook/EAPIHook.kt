@@ -191,31 +191,6 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                 throw NoSuchMethodException("$methodName with ${args.size} args in ${clazz.name}")
             }
         }
-
-        /**
-         * 通过类型查找字段
-         */
-        @JvmStatic
-        fun findFieldByType(obj: Any, fieldType: Class<*>, vararg preferredNames: String): Field? {
-            // 优先按名称查找
-            for (name in preferredNames) {
-                try {
-                    val f = obj.javaClass.getDeclaredField(name)
-                    if (fieldType.isAssignableFrom(f.type)) {
-                        f.isAccessible = true
-                        return f
-                    }
-                } catch (_: NoSuchFieldException) {}
-            }
-            // 按类型查找
-            for (f in obj.javaClass.declaredFields) {
-                if (fieldType.isAssignableFrom(f.type)) {
-                    f.isAccessible = true
-                    return f
-                }
-            }
-            return null
-        }
     }
 
     /** 标记EAPI响应拦截hook是否成功注册 */
@@ -294,6 +269,45 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
                             } catch (_: Exception) {}
                         }
                         throw t
+                    }
+
+                    // ===== 去广告：剥离广告数据接口响应（独立于音源代理开关，由 beauty_ad_key 驱动）=====
+                    // 必须在代理开关判断之前执行，确保仅开去广告时也生效
+                    val adEnabled = SettingHelper.getInstance().isEnable(SettingHelper.beauty_ad_key)
+                    val isAdDataApi = result != null && adEnabled
+                        && (urlPath.contains("/eapi/") || urlPath.contains("/xeapi/"))
+                        && (urlPath.contains("comment/feed/inserted/resources/combined")
+                            || urlPath.contains("comment/banner/get")
+                            || urlPath.contains("ad/loading")
+                            || urlPath.contains("ad/get")
+                            || urlPath.contains("ad/banner"))
+                    if (isAdDataApi) {
+                        // 读取 body 后必须重建 response 返回（readResponseBodyString 会消费 body）
+                        try {
+                            val response = result
+                            val responseBody = callMethod(response, "body")
+                            if (responseBody != null) {
+                                val contentType = callMethod(responseBody, "contentType")
+                                val original = readResponseBodyString(responseBody)
+                                if (!TextUtils.isEmpty(original)) {
+                                    // 剥离广告数据（保持 code 200），解析/重建失败则用原始内容
+                                    val stripped = stripAdResponse(urlPath, original) ?: original
+                                    val newResponse = rebuildResponseBody(response, contentType, stripped)
+                                    if (newResponse != null) {
+                                        if (stripped != original) {
+                                            LogUtils.i("EAPIHook: 去广告-剥离广告数据响应 path=$urlPath")
+                                        }
+                                        return newResponse
+                                    }
+                                    // 重建失败：构造空响应兜底，避免返回已消费 body 的原响应
+                                    val empty = buildErrorResponse(chain, original)
+                                    if (empty != null) return empty
+                                }
+                            }
+                        } catch (t: Throwable) {
+                            LogUtils.w("EAPIHook: 去广告-处理广告数据接口异常 ${t.message}")
+                        }
+                        return result
                     }
 
                     // 代理未开启则直接返回，不消费body
@@ -1103,6 +1117,60 @@ class EAPIHook(private val module: XposedModule, private val appContext: Context
             return jsonObject.toString()
         }
         return null
+    }
+
+    /**
+     * 去广告：剥离广告数据接口响应中的广告卡片/横幅内容。
+     * 让接口正常返回（避免客户端因失败走缓存兜底），但广告数据被清空。
+     * 由 beauty_ad_key 驱动，独立于音源代理开关。
+     *
+     * 实测 9.5.81 结构：
+     * - /xeapi/ad/loading/get、/xeapi/ad/loading/bidget：顶层 `ads` 为 JSONArray 广告列表 → 置空
+     * - /xeapi/ad/get：顶层 `ads` 为 JSONObject（广告详情）→ 置空；无 data 数组
+     * - /xeapi/comment/feed/inserted/resources/combined：data = {count,offset,records,delayRender}，
+     *   records 为插入的广告/歌手卡片列表 → 清空
+     * - comment/banner/get：评论顶部横幅 → data 置空
+     */
+    private fun stripAdResponse(path: String, original: String): String? {
+        try {
+            val jsonObject = JSONObject(original)
+            if (path.contains("comment/feed/inserted/resources/combined")) {
+                // 评论"插入资源"：清空 data.records（广告卡片所在），保持 code 200 与其它字段
+                val data = jsonObject.optJSONObject("data")
+                if (data != null) {
+                    data.put("count", 0)
+                    data.put("offset", 0)
+                    data.put("records", JSONArray())
+                    if (!data.isNull("delayRender")) data.put("delayRender", false)
+                    jsonObject.put("data", data)
+                }
+                jsonObject.put("code", 200)
+                return jsonObject.toString()
+            } else if (path.contains("ad/loading") || path.contains("ad/get") || path.contains("ad/banner")) {
+                // 开屏/横幅广告接口：清空 ads（数组/对象均置空），保持 code 200
+                if (jsonObject.has("ads")) {
+                    val ads = jsonObject.opt("ads")
+                    if (ads is JSONArray) jsonObject.put("ads", JSONArray())
+                    else if (ads is JSONObject) jsonObject.put("ads", JSONObject())
+                    else jsonObject.remove("ads")
+                }
+                if (jsonObject.has("data")) {
+                    val data = jsonObject.opt("data")
+                    if (data is JSONArray) jsonObject.put("data", JSONArray())
+                    else if (data is JSONObject) jsonObject.put("data", JSONObject())
+                }
+                jsonObject.put("code", 200)
+                return jsonObject.toString()
+            } else if (path.contains("comment/banner/get")) {
+                // 评论顶部横幅
+                jsonObject.put("data", JSONObject())
+                jsonObject.put("code", 200)
+                return jsonObject.toString()
+            }
+        } catch (e: Exception) {
+            LogUtils.w("EAPIHook: 去广告-解析广告响应失败 ${e.message}")
+        }
+        return original
     }
 
     /**

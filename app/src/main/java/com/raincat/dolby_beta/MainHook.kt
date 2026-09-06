@@ -111,9 +111,9 @@ class MainHook : XposedModule() {
                             LogUtils.init(context)
                             LogUtils.i("MainHook: attachBaseContext afterHook - appClass=$appClassName, context=${context.packageName}")
                             if (isOther) {
-                                HookOther(this@MainHook, classLoader, packageName, context, true)
+                                HookOther(this@MainHook, packageName, context, true)
                             } else {
-                                Hook(this@MainHook, classLoader, packageName, context, true)
+                                Hook(this@MainHook, context, true)
                             }
                         } catch (e: Throwable) {
                             LogUtils.e("MainHook: attachBaseContext初始化失败 - ${e.message}")
@@ -139,9 +139,9 @@ class MainHook : XposedModule() {
                             val context = chain.thisObject as android.content.Context
                             LogUtils.i("MainHook: onCreate afterHook - appClass=$appClassName, context=${context.packageName}")
                             if (isOther) {
-                                HookOther(this@MainHook, classLoader, packageName, context, false)
+                                HookOther(this@MainHook, packageName, context, false)
                             } else {
-                                Hook(this@MainHook, classLoader, packageName, context, false)
+                                Hook(this@MainHook, context, false)
                             }
                         } catch (e: Throwable) {
                             LogUtils.e("MainHook: onCreate初始化失败 - ${e.message}")

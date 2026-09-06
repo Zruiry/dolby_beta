@@ -30,6 +30,7 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.raincat.dolby_beta.helper.ClassHelper
 import com.raincat.dolby_beta.helper.SettingHelper
 import com.raincat.dolby_beta.ui.isDarkTheme
 import com.raincat.dolby_beta.ui.showSettingsDialog
@@ -122,7 +123,7 @@ class SettingHook(
 
             for (className in classList) {
                 try {
-                    val clazz = findClassIfExists(className, classLoader) ?: continue
+                    val clazz = ClassHelper.findClassIfExists(className, classLoader) ?: continue
                     // 检查内部类实现的接口中，是否有含 b(String):boolean 和 c(String):void 方法的接口
                     val tabHandlerInterface = findTabHandlerInterfaceFromInterfaces(clazz) ?: continue
                     val methodB = findBooleanStringMethod(clazz) ?: continue
@@ -234,14 +235,6 @@ class SettingHook(
         } catch (e: Throwable) {
             dialogShowing = false
             LogUtils.e("SettingHook: showSettingsDialog 异常 - ${LogUtils.getStackTraceString(e)}")
-        }
-    }
-
-    private fun findClassIfExists(className: String, classLoader: ClassLoader): Class<*>? {
-        return try {
-            classLoader.loadClass(className)
-        } catch (e: ClassNotFoundException) {
-            null
         }
     }
 }

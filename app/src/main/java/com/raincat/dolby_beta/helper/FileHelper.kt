@@ -1,10 +1,9 @@
 /**
- * 文件操作帮助类 - 提供文件删除、读取、写入、复制、解压等操作
+ * 文件操作帮助类 - 提供文件删除、读取、写入、解压等操作
  *
  */
 package com.raincat.dolby_beta.helper
 
-import android.content.res.AssetManager
 import java.io.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -97,63 +96,6 @@ object FileHelper {
             } catch (e: IOException) {
                 e.printStackTrace()
             }
-        }
-    }
-
-    /**
-     * 复制文件
-     */
-    @JvmStatic
-    fun copyFile(originalPath: String, targetPath: String) {
-        val originalFile = File(originalPath)
-        val targetFile = File(targetPath)
-        if (originalFile.exists()) {
-            try {
-                val fis = FileInputStream(originalFile)
-                val fos = FileOutputStream(targetFile)
-                val buffer = ByteArray(1024)
-                var count: Int
-                while (fis.read(buffer).also { count = it } != -1) {
-                    fos.write(buffer, 0, count)
-                }
-                fos.flush()
-                fos.close()
-                fis.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    /**
-     * 从assets中拷贝文件
-     */
-    @JvmStatic
-    fun copyFilesAssets(assetManager: AssetManager, oldPath: String, codePath: String) {
-        try {
-            val fileNames = assetManager.list(oldPath) ?: return
-            if (fileNames.isNotEmpty()) {
-                // 如果是目录
-                val file = File(codePath)
-                file.mkdirs()
-                for (fileName in fileNames) {
-                    copyFilesAssets(assetManager, oldPath + File.separator + fileName, codePath + File.separator + fileName)
-                }
-            } else {
-                // 如果是文件
-                val inputStream: InputStream = assetManager.open(oldPath)
-                val fos = FileOutputStream(File(codePath))
-                val buffer = ByteArray(1024)
-                var byteCount: Int
-                while (inputStream.read(buffer).also { byteCount = it } != -1) {
-                    fos.write(buffer, 0, byteCount)
-                }
-                fos.flush()
-                inputStream.close()
-                fos.close()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
