@@ -163,25 +163,18 @@ class ProxyHook(module: XposedModule, private val context: Context, isPlayProces
         // 非play进程时启动代理（与dev分支一致：无条件重置状态后启动）
         if (!isPlayProcess) {
             if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_master_key)) {
-                if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key)) {
-                    // GD Studio 直连在线 API，无需本地脚本；后台探测 API 可用性
-                    ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-                    Thread(Runnable { ScriptHelper.waitAndCheckGdStudio(context) }, "ProxyHook-GdCheck").start()
-                    LogUtils.i("ProxyHook: GD Studio 模式启动，后台检查在线音源可用性")
-                } else {
-                    ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
-                    // 异步启动脚本，避免阻塞Hook初始化（文件解压和shell执行较耗时）
-                    Thread(Runnable {
-                        ScriptHelper.initScript(context, false)
-                        if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) {
-                            ScriptHelper.startHttpProxyMode()
-                        } else {
-                            ScriptHelper.startScript()
-                        }
-                        // 启动后主动检查当前模式代理是否可用，失败自动重试并提示
-                        ScriptHelper.waitAndCheckProxy(context)
-                    }, "ProxyHook-ScriptStarter").start()
-                }
+                ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
+                // 异步启动脚本，避免阻塞Hook初始化（文件解压和shell执行较耗时）
+                Thread(Runnable {
+                    ScriptHelper.initScript(context, false)
+                    if (SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key)) {
+                        ScriptHelper.startHttpProxyMode()
+                    } else {
+                        ScriptHelper.startScript()
+                    }
+                    // 启动后主动检查当前模式代理是否可用，失败自动重试并提示
+                    ScriptHelper.waitAndCheckProxy(context)
+                }, "ProxyHook-ScriptStarter").start()
             }
         }
         }

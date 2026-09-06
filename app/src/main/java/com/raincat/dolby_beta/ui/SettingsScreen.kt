@@ -81,7 +81,7 @@ private val NeteaseRed = Color(0xFFD33A31)
 private val DialogWidth = 440.dp
 
 /** 设置弹窗内部页面 */
-private enum class Screen { MAIN, PROXY, PROXY_CONFIG, SCRIPT_CONFIG, GD_CONFIG, BEAUTY }
+private enum class Screen { MAIN, PROXY, PROXY_CONFIG, SCRIPT_CONFIG, BEAUTY }
 
 /** 深浅色主题配色集合 */
 private data class DolbyColors(
@@ -232,7 +232,7 @@ private fun SettingsRoot(
         when (screen) {
             Screen.MAIN -> onDismiss()
             Screen.PROXY, Screen.BEAUTY -> screen = Screen.MAIN
-            Screen.PROXY_CONFIG, Screen.SCRIPT_CONFIG, Screen.GD_CONFIG -> screen = Screen.PROXY
+            Screen.PROXY_CONFIG, Screen.SCRIPT_CONFIG -> screen = Screen.PROXY
         }
     }
 
@@ -323,7 +323,6 @@ private fun SettingsRoot(
                             Screen.PROXY -> ProxyScreen(colors, activity) { screen = it }
                             Screen.PROXY_CONFIG -> ProxyConfigScreen(colors) { screen = Screen.PROXY }
                             Screen.SCRIPT_CONFIG -> ScriptConfigScreen(colors) { screen = Screen.PROXY }
-                            Screen.GD_CONFIG -> GdConfigScreen(colors) { screen = Screen.PROXY }
                             Screen.BEAUTY -> BeautyScreen(colors) { screen = Screen.MAIN }
                             else -> MainScreen(colors, activity) { screen = it }
                         }
@@ -475,10 +474,6 @@ private fun ProxyScreen(
     var serverMode by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_server_key))
     }
-    // true=GD Studio 在线音源（映射 proxy_gd_studio_key）
-    var gdMode by remember {
-        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_studio_key))
-    }
     val setMaster = { new: Boolean ->
         masterEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_master_key, new)
@@ -486,23 +481,12 @@ private fun ProxyScreen(
     }
     val setServerMode = { new: Boolean ->
         serverMode = new
-        gdMode = false
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_server_key, new)
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gd_studio_key, false)
-        applyProxyMode(activity)
-    }
-    val setGdMode = { new: Boolean ->
-        gdMode = new
-        serverMode = false
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gd_studio_key, new)
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_server_key, false)
         applyProxyMode(activity)
     }
     val setLocalMode = {
         serverMode = false
-        gdMode = false
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_server_key, false)
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gd_studio_key, false)
         applyProxyMode(activity)
     }
 
@@ -513,9 +497,6 @@ private fun ProxyScreen(
     var flacEnabled by remember {
         mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_flac_key))
     }
-    var gdFlacEnabled by remember {
-        mutableStateOf(SettingHelper.getInstance().getSetting(SettingHelper.proxy_gd_flac_key))
-    }
     val setPriority = { new: Boolean ->
         priorityEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_priority_key, new)
@@ -523,10 +504,6 @@ private fun ProxyScreen(
     val setFlac = { new: Boolean ->
         flacEnabled = new
         SettingHelper.getInstance().setSetting(SettingHelper.proxy_flac_key, new)
-    }
-    val setGdFlac = { new: Boolean ->
-        gdFlacEnabled = new
-        SettingHelper.getInstance().setSetting(SettingHelper.proxy_gd_flac_key, new)
     }
 
     SectionLabel("代理设置", colors)
@@ -547,7 +524,7 @@ private fun ProxyScreen(
         ) {
             ModeOption(
                 title = "本地代理",
-                selected = !serverMode && !gdMode,
+                selected = !serverMode,
                 enabled = masterEnabled,
                 colors = colors,
                 modifier = Modifier.weight(1f),
@@ -559,18 +536,10 @@ private fun ProxyScreen(
                 colors = colors,
                 modifier = Modifier.weight(1f),
             ) { setServerMode(true) }
-            ModeOption(
-                title = "GD Studio",
-                selected = gdMode,
-                enabled = masterEnabled,
-                colors = colors,
-                modifier = Modifier.weight(1f),
-            ) { setGdMode(true) }
         }
         // 选中模式的说明
         Text(
             text = when {
-                gdMode -> "调用 GD Studio 在线音源，需联网并受对方频率限制（5分钟内不超50次请求）\nAPI（${SettingHelper.proxy_gd_api}）"
                 serverMode -> "连接自建服务器代理，无需运行 node"
                 else -> "使用内置脚本在本机运行代理"
             },
@@ -582,17 +551,7 @@ private fun ProxyScreen(
     }
 
     // 按代理模式展示对应配置（总开关关闭时不展示）
-    if (masterEnabled && gdMode) {
-        SectionLabel("GD Studio 配置", colors)
-        GroupCard(colors) {
-            NavItem(SettingHelper.proxy_gd_configuration_title, SettingHelper.proxy_gd_configuration_sub, colors = colors) {
-                onNavigate(Screen.GD_CONFIG)
-            }
-            CardDivider(colors)
-            SwitchItem(SettingHelper.proxy_gd_flac_title, SettingHelper.proxy_gd_flac_sub,
-                gdFlacEnabled, setGdFlac, colors)
-        }
-    } else if (masterEnabled && serverMode) {
+    if (masterEnabled && serverMode) {
         SectionLabel("服务器代理配置", colors)
         GroupCard(colors) {
             NavItem(SettingHelper.proxy_configuration_title, SettingHelper.proxy_configuration_sub, colors = colors) {
@@ -630,57 +589,14 @@ private fun applyProxyMode(activity: Activity) {
     // 统一先复位状态，等待各自模式的就绪探测/脚本输出再置位
     ExtraHelper.setExtraDate(ExtraHelper.SCRIPT_STATUS, "0")
     if (!setting.getSetting(SettingHelper.master_key)) return
-    when {
-        setting.getSetting(SettingHelper.proxy_gd_studio_key) -> {
-            // GD Studio：直连在线 API，后台探测在线音源可用性（成功才提示 GD Studio 在线音源可用）
-            Thread(Runnable { ScriptHelper.waitAndCheckGdStudio(activity) }, "Settings-GdCheck").start()
-        }
-        setting.getSetting(SettingHelper.proxy_server_key) -> {
-            // 服务器代理：无本地脚本，后台探测配置服务器连通性并提示成功/失败
-            Thread(Runnable { ScriptHelper.waitAndCheckProxy(activity) }, "Settings-ProxyCheck").start()
-        }
-        else -> {
-            // 本地代理：释放并启动脚本，就绪后由 startScript 提示本地代理运行成功
-            ScriptHelper.initScript(activity, false)
-            ScriptHelper.startScript()
-        }
+    if (setting.getSetting(SettingHelper.proxy_server_key)) {
+        // 服务器代理：无本地脚本，后台探测配置服务器连通性并提示成功/失败
+        Thread(Runnable { ScriptHelper.waitAndCheckProxy(activity) }, "Settings-ProxyCheck").start()
+    } else {
+        // 本地代理：释放并启动脚本，就绪后由 startScript 提示本地代理运行成功
+        ScriptHelper.initScript(activity, false)
+        ScriptHelper.startScript()
     }
-}
-
-// ==================== GD Studio 配置页面 ====================
-
-@Composable
-private fun GdConfigScreen(colors: DolbyColors, onBack: () -> Unit) {
-    SettingsHeader(
-        title = "GD Studio 配置",
-        subtitle = SettingHelper.proxy_gd_configuration_sub,
-        rightText = null,
-        showBack = true,
-        colors = colors,
-        onBack = onBack,
-    )
-
-    var source by remember { mutableStateOf(SettingHelper.getInstance().getGdSource()) }
-    val setSource = { new: String ->
-        source = new
-        SettingHelper.getInstance().setGdSource(new)
-    }
-
-    SectionLabel("GD Studio 配置", colors)
-    GroupCard(colors) {
-        InputItem(
-            title = SettingHelper.proxy_gd_source_title,
-            value = source,
-            placeholder = SettingHelper.proxy_gd_source_default,
-            colors = colors,
-            // 支持多音源：空格分隔（如 joox kuwo），按顺序回退取第一个可用源
-            isValidInput = { it.isNotEmpty() && it.all { c -> c.isLetter() || c == ' ' } },
-            onValueChange = setSource,
-            onResetDefault = { setSource(SettingHelper.proxy_gd_source_default) },
-        )
-    }
-
-    Spacer(modifier = Modifier.height(8.dp))
 }
 
 // ==================== 服务器代理配置页面 ====================

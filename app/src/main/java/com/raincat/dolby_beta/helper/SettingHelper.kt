@@ -76,23 +76,6 @@ class SettingHelper private constructor(context: Context) {
         @JvmField val script_configuration_title = "脚本参数配置"
         @JvmField val script_configuration_sub = "在此填入本地脚本的运行参数，仅本地脚本模式生效"
 
-        // ==================== GD Studio 在线音源 ====================
-        /** GD Studio 在线音源 API 地址 */
-        @JvmField val proxy_gd_api = "https://music-api.gdstudio.xyz/api.php"
-
-        @JvmField val proxy_gd_studio_key = "β_proxy_gd_studio_key"
-
-        @JvmField val proxy_gd_source_key = "β_proxy_gd_source_key"
-        @JvmField val proxy_gd_source_title = "替换音源"
-        @JvmField val proxy_gd_source_default = "joox"
-
-        @JvmField val proxy_gd_flac_key = "β_proxy_gd_flac_key"
-        @JvmField val proxy_gd_flac_title = "无损音质优先"
-        @JvmField val proxy_gd_flac_sub = "GD Studio 模式优先获取无损音质，但并不是100%能获取到无损音质"
-
-        @JvmField val proxy_gd_configuration_title = "API音源配置"
-        @JvmField val proxy_gd_configuration_sub = "当前可稳定获取播放地址的音源为 joox，kuwo/tencent 等暂不可用"
-
         // ==================== 美化设置 ====================
         @JvmField val beauty_title = "美化设置"
 
@@ -142,10 +125,8 @@ class SettingHelper private constructor(context: Context) {
         // 音源代理默认启用
         settingMap[proxy_master_key] = sharedPreferences.getBoolean(proxy_master_key, true)
         settingMap[proxy_server_key] = sharedPreferences.getBoolean(proxy_server_key, false)
-        settingMap[proxy_gd_studio_key] = sharedPreferences.getBoolean(proxy_gd_studio_key, false)
         settingMap[proxy_priority_key] = sharedPreferences.getBoolean(proxy_priority_key, false)
         settingMap[proxy_flac_key] = sharedPreferences.getBoolean(proxy_flac_key, false)
-        settingMap[proxy_gd_flac_key] = sharedPreferences.getBoolean(proxy_gd_flac_key, false)
 
         // 美化设置（深色跟随系统默认启用，保持与升级前一致）
         settingMap[beauty_follow_dark_key] = sharedPreferences.getBoolean(beauty_follow_dark_key, true)
@@ -178,23 +159,23 @@ class SettingHelper private constructor(context: Context) {
         deleteSetting(dex_key)
         deleteSetting(proxy_master_key)
         deleteSetting(proxy_server_key)
-        deleteSetting(proxy_gd_studio_key)
         deleteSetting(proxy_priority_key)
         deleteSetting(proxy_flac_key)
-        deleteSetting(proxy_gd_flac_key)
         deleteSetting(beauty_follow_dark_key)
         deleteSetting(beauty_tab_hide_key)
         deleteSetting(beauty_ad_key)
-        // 输入类配置（代理服务器/端口/Cookie/音源顺序/GD音源）
+        // 输入类配置（代理服务器/端口/Cookie/音源顺序）
         deleteSetting(http_proxy_key)
         deleteSetting(proxy_port_key)
         deleteSetting(proxy_local_port_key)
         deleteSetting(qq_cookie_key)
         deleteSetting(migu_cookie_key)
         deleteSetting(proxy_original_key)
-        deleteSetting(proxy_gd_source_key)
         // 旧版遗留的无引用配置（当前代码不读写，一并清除还原纯净）
         deleteSetting("β_proxy_mode_key")
+        deleteSetting("β_proxy_gd_studio_key")
+        deleteSetting("β_proxy_gd_flac_key")
+        deleteSetting("β_proxy_gd_source_key")
 
         // 重建内存缓存为默认值：删除不更新 settingMap，同进程内读取会命中旧缓存
         settingMap.clear()
@@ -202,10 +183,8 @@ class SettingHelper private constructor(context: Context) {
         settingMap[dex_key] = true
         settingMap[proxy_master_key] = true
         settingMap[proxy_server_key] = false
-        settingMap[proxy_gd_studio_key] = false
         settingMap[proxy_priority_key] = false
         settingMap[proxy_flac_key] = false
-        settingMap[proxy_gd_flac_key] = false
         settingMap[beauty_follow_dark_key] = true
         settingMap[beauty_tab_hide_key] = false
         settingMap[beauty_ad_key] = true
@@ -261,15 +240,4 @@ class SettingHelper private constructor(context: Context) {
             sharedPreferences.edit().putString(migu_cookie_key, cookie).apply()
         }
     }
-
-    // ==================== GD Studio 相关 ====================
-
-    fun getGdSource(): String = sharedPreferences.getString(proxy_gd_source_key, proxy_gd_source_default) ?: proxy_gd_source_default
-
-    fun setGdSource(source: String?) {
-        if (!source.isNullOrEmpty()) {
-            sharedPreferences.edit().putString(proxy_gd_source_key, source).apply()
-        }
-    }
-
 }
