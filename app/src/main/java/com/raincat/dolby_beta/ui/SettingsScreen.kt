@@ -282,15 +282,18 @@ private fun SettingsRoot(
                         MainScreen(colors, activity) { screen = it }
                     }
                 }
-                // 子页面打开时，给底层主卡片盖一层等大遮罩，突出当前页面层级
+                // 子页面打开时，给底层主卡片盖一层等大遮罩，突出当前页面层级；
+                // 遮罩消费点击事件：上级页面不可再交互，点击遮罩则逐级返回
                 if (screen != Screen.MAIN) {
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .background(
-                                color = Color.Black.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(16.dp),
-                            ),
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.35f))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { goBack() },
                     )
                 }
             }
@@ -340,10 +343,16 @@ private fun MainScreen(
     activity: Activity,
     onNavigate: (Screen) -> Unit,
 ) {
+    val cloudVersion = remember {
+        runCatching {
+            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName
+        }.getOrNull()
+    }
     SettingsHeader(
         title = "杜比大喇叭β",
         subtitle = "本模块仅供学习交流，严禁用于商业用途，请于24小时内删除。\n" +
             "注意：模块工作原理为音源替换而非破解，所以单曲付费与无版权歌曲有几率匹配错误，真心支持歌手请付费。",
+        middleText = cloudVersion?.let { "网易云v$it" },
         rightText = "v${BuildConfig.VERSION_NAME}",
         showBack = false,
         colors = colors,
@@ -871,6 +880,7 @@ private fun SettingsHeader(
     title: String,
     subtitle: String?,
     rightText: String?,
+    middleText: String? = null,
     showBack: Boolean,
     colors: DolbyColors,
     onBack: () -> Unit,
@@ -891,20 +901,45 @@ private fun SettingsHeader(
                     modifier = Modifier.clickable { onBack() }.padding(end = 6.dp),
                 )
             }
-            Text(
-                text = title,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.title,
-                modifier = Modifier.weight(1f),
-            )
-            if (rightText != null) {
+            if (middleText != null) {
+                // 主页面头部：标题靠左自然宽，middleText 置于标题与模块版本之间的中部
                 Text(
-                    text = rightText,
+                    text = title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.title,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = middleText,
                     fontSize = 12.sp,
                     color = colors.version,
-                    modifier = Modifier.padding(start = 8.dp),
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                if (rightText != null) {
+                    Text(
+                        text = rightText,
+                        fontSize = 12.sp,
+                        color = colors.version,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            } else {
+                Text(
+                    text = title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.title,
+                    modifier = Modifier.weight(1f),
+                )
+                if (rightText != null) {
+                    Text(
+                        text = rightText,
+                        fontSize = 12.sp,
+                        color = colors.version,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
         }
         if (subtitle != null) {
