@@ -4,6 +4,7 @@
  */
 package com.raincat.dolby_beta.db
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -54,6 +55,7 @@ class ExtraDao private constructor(context: Context) {
     /**
      * 获取某个额外记录
      */
+    @SuppressLint("Range")
     @Synchronized
     fun getExtra(key: String): String {
         var extra = "-1"
