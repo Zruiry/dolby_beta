@@ -4,6 +4,7 @@
  */
 package com.raincat.dolby_beta.ui
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -216,6 +217,7 @@ internal fun showSettingsDialog(
 }
 
 /** 设置根组件：管理页面导航与统一弹窗外观 */
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 private fun SettingsRoot(
     activity: Activity,

@@ -29,6 +29,7 @@ import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 
+@SuppressLint("StaticFieldLeak")
 object ScriptHelper {
 
     /** 模块路径（APK路径，由MainHook.onModuleLoaded设置） */
