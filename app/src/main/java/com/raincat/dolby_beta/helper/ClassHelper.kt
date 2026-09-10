@@ -30,6 +30,8 @@ object ClassHelper {
 
     /** 混淆包名匹配正则：根包名为1-3个小写字母+数字（如 dl0、ek1、ab 等），不同版本会变化 */
     private val obfuscatePackagePattern = Pattern.compile("^[a-z][a-z0-9]{0,2}$")
+    /** 主Tab模型所在的非混淆包名（BottomTabInfoVO 等），用于过滤特征匹配候选 */
+    private const val MAIN_TAB_MODEL_PACKAGE = "com.netease.cloudmusic.module.main"
     /** DEX 缓存 schema 版本号：扫描逻辑变更时递增，使旧缓存自动失效 */
     private const val CACHE_SCHEMA_VERSION = 2
 
@@ -442,6 +444,18 @@ object ClassHelper {
     }
 
     /**
+     * 判断类的方法签名是否引用主Tab模型包（非混淆包）
+     *
+     * 用于在特征匹配结果中优先挑出真正的底部Tab管理类：网易云的主Tab相关模型
+     * （BottomTabInfoVO / MainPageTabApiResult 等）固定在 com.netease.cloudmusic.module.main 下
+     */
+    private fun referencesMainTabModelPackage(clazz: Class<*>): Boolean =
+        clazz.declaredMethods.any { m ->
+            m.returnType.name.startsWith(MAIN_TAB_MODEL_PACKAGE)
+                    || m.parameterTypes.any { p -> p.name.startsWith(MAIN_TAB_MODEL_PACKAGE) }
+        }
+
+    /**
      * 底部Tab管理类查找（完全通过特征匹配，不依赖混淆类名和方法名）
      *
      * 通用特征：
@@ -469,7 +483,7 @@ object ClassHelper {
                 LogUtils.i("ClassHelper: BottomTabManager 特征匹配扫描混淆包类，共 ${list.size} 个")
                 // 调试：打印前20个类名，确认 dl0.g/dl0.h 是否在缓存中
                 list.take(20).forEach { LogUtils.i("ClassHelper: BottomTabManager 候选类 - $it") }
-                clazz = Stream.of(list)
+                val candidates = Stream.of(list)
                     .map { getClassByXposed(it) }
                     .filter { it != null }
                     .map { it!! }
@@ -486,8 +500,12 @@ object ClassHelper {
                         m.returnType == Void::class.javaPrimitiveType &&
                         m.parameterTypes.size == 1 && List::class.java.isAssignableFrom(m.parameterTypes[0])
                     } }
-                    .findFirst()
-                    .orElse(null)
+                    .toList()
+                // 特征4：方法签名引用主Tab模型所在的非混淆包，用于排除同样具备 List 读写特征的其它数据类
+                // （如 9.5.90 的歌单/歌曲聚合类）。命中即用；历史版本若无此类方法则回退到前3个特征的结果，
+                // 保证特征4 不成立时不影响旧版本匹配
+                clazz = candidates.firstOrNull { c -> referencesMainTabModelPackage(c) }
+                    ?: candidates.firstOrNull()
                 if (clazz != null) {
                     LogUtils.i("ClassHelper: 特征匹配找到BottomTabManager: ${clazz!!.name}")
                 } else {
